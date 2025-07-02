@@ -1,4 +1,5 @@
 # Kage
+[![Forged with 🐍](https://a.b-b.top/badge.svg?repo=Kage&label=Forged%20with%20🐍&background_color=4caf50&background_color2=66bb6a&utm_source=github&utm_medium=readme&utm_campaign=badge)](https://a.b-b.top)
 
 Kage is a PHP code encryption and protection tool that helps secure your PHP source code by encrypting it and providing a secure runtime environment for execution.
 
