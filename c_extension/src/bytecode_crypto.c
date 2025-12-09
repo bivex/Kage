@@ -9,53 +9,75 @@
 // Парсер VLD вывода в структурированные опкоды
 PHPAPI vld_bytecode_info* kage_parse_vld_output(const char *vld_output) {
     if (!vld_output) return NULL;
-    
+
     vld_bytecode_info *info = emalloc(sizeof(vld_bytecode_info));
     memset(info, 0, sizeof(vld_bytecode_info));
-    
+
     info->functions = emalloc(sizeof(HashTable));
     info->opcodes = emalloc(sizeof(HashTable));
+    info->source_file = NULL;
+    info->total_opcodes = 0;
+
     zend_hash_init(info->functions, 8, NULL, NULL, 0);
     zend_hash_init(info->opcodes, 64, NULL, NULL, 0);
-    
+
     // Парсим VLD вывод построчно
     char *output_copy = estrndup(vld_output, strlen(vld_output));
     char *line = strtok(output_copy, "\n");
-    zend_op_array *current_op_array = NULL;
-    
+    int lineno, op_num;
+    char opcode_str[256];
+
     while (line) {
         // Парсим строку таблицы опкодов
         // Формат: line #* E I O op fetch ext return operands
-        if (sscanf(line, "%d %d %*s %*s %*s %s", &lineno, &op_num, opcode_str) == 3) {
+        if (sscanf(line, "%d %d %*s %*s %*s %255s", &lineno, &op_num, opcode_str) == 3) {
             // Создаём зашифрованный опкод
             zend_op_encrypted *op = emalloc(sizeof(zend_op_encrypted));
             memset(op, 0, sizeof(zend_op_encrypted));
-            
+
             op->lineno = lineno;
-            op->opcode = zend_get_opcode_by_name(opcode_str);
-            
-            // Парсим операнды (упрощённо)
-            // В реальности нужно более сложный парсер
-            
+            // Простая конвертация строки в opcode (в реальности нужна таблица)
+            if (strcmp(opcode_str, "ASSIGN") == 0) op->opcode = 38; // ZEND_ASSIGN
+            else if (strcmp(opcode_str, "ECHO") == 0) op->opcode = 40; // ZEND_ECHO
+            else if (strcmp(opcode_str, "ADD") == 0) op->opcode = 1; // ZEND_ADD
+            else if (strcmp(opcode_str, "SUB") == 0) op->opcode = 2; // ZEND_SUB
+            else if (strcmp(opcode_str, "MUL") == 0) op->opcode = 3; // ZEND_MUL
+            else if (strcmp(opcode_str, "RETURN") == 0) op->opcode = 62; // ZEND_RETURN
+            else op->opcode = 0; // NOP
+
+            // Парсим операнды из остатка строки
+            char *operands = strstr(line, opcode_str);
+            if (operands) {
+                operands += strlen(opcode_str);
+                // Простой парсер операндов
+                if (strstr(operands, "!")) {
+                    // Это переменная
+                    ZVAL_STRING(&op->op1, "!VAR");
+                }
+                if (strstr(operands, "'") || strstr(operands, "\"")) {
+                    // Это строка
+                    ZVAL_STRING(&op->op1, "'STRING'");
+                }
+            }
+
             // Сохраняем опкод
             zend_hash_index_add_ptr(info->opcodes, op_num, op);
             info->total_opcodes++;
         }
-        
-        // Ищем начало функции
-        if (strstr(line, "Function ") && strstr(line, ":")) {
-            char func_name[256];
-            if (sscanf(line, "Function %255[^:]", func_name) == 1) {
-                // Создаём новый op_array для функции
-                current_op_array = emalloc(sizeof(zend_op_array));
-                memset(current_op_array, 0, sizeof(zend_op_array));
-                zend_hash_str_add_ptr(info->functions, func_name, strlen(func_name), current_op_array);
+
+        // Ищем имя файла
+        if (strstr(line, "filename:") && !info->source_file) {
+            char *filename_start = strstr(line, "filename:");
+            if (filename_start) {
+                filename_start += 9; // strlen("filename:")
+                while (*filename_start == ' ') filename_start++;
+                info->source_file = estrndup(filename_start, strlen(filename_start));
             }
         }
-        
+
         line = strtok(NULL, "\n");
     }
-    
+
     efree(output_copy);
     return info;
 }
@@ -63,10 +85,16 @@ PHPAPI vld_bytecode_info* kage_parse_vld_output(const char *vld_output) {
 // XOR шифрование опкода (простой и быстрый)
 static void kage_xor_encrypt_op(zend_op_encrypted *op, const char *key, size_t key_len) {
     if (!op || !key || key_len == 0) return;
-    
+
     // Шифруем opcode
     op->opcode ^= key[0];
-    
+
+    // Шифруем extended_value
+    op->extended_value ^= key[1 % key_len];
+
+    // Шифруем lineno (немного)
+    op->lineno ^= (key[2 % key_len] | (key[3 % key_len] << 8));
+
     // Шифруем операнды (если они есть)
     if (Z_TYPE(op->op1) == IS_STRING && Z_STRVAL(op->op1)) {
         size_t len = Z_STRLEN(op->op1);
@@ -74,11 +102,19 @@ static void kage_xor_encrypt_op(zend_op_encrypted *op, const char *key, size_t k
             Z_STRVAL(op->op1)[i] ^= key[i % key_len];
         }
     }
-    
+
     if (Z_TYPE(op->op2) == IS_STRING && Z_STRVAL(op->op2)) {
         size_t len = Z_STRLEN(op->op2);
         for (size_t i = 0; i < len; i++) {
             Z_STRVAL(op->op2)[i] ^= key[i % key_len];
+        }
+    }
+
+    // Шифруем результат
+    if (Z_TYPE(op->result) == IS_STRING && Z_STRVAL(op->result)) {
+        size_t len = Z_STRLEN(op->result);
+        for (size_t i = 0; i < len; i++) {
+            Z_STRVAL(op->result)[i] ^= key[i % key_len];
         }
     }
 }
@@ -92,51 +128,103 @@ static void kage_aes_encrypt_op(zend_op_encrypted *op, const char *key, size_t k
 // Основная функция шифрования опкодов
 PHPAPI kage_result_t kage_encrypt_opcodes(vld_bytecode_info *bytecode, kage_bytecode_crypto_config *config) {
     kage_result_t result = {KAGE_SUCCESS, {NULL}};
-    
+
     if (!bytecode || !config || !config->key) {
         result.error = KAGE_ERROR_INVALID_INPUT;
         return result;
     }
-    
+
     // Проходим по всем опкодам
     zend_op_encrypted *op;
+    int encrypted_count = 0;
+
     ZEND_HASH_FOREACH_PTR(bytecode->opcodes, op) {
+        int should_encrypt = 1;
+
         if (config->selective_encryption) {
             // Выборочное шифрование - шифруем только определённые опкоды
-            if (op->opcode == ZEND_ECHO || op->opcode == ZEND_ASSIGN) {
-                // Пропускаем часто используемые опкоды для производительности
-                continue;
+            switch (op->opcode) {
+                case 40: // ZEND_ECHO - часто используется, можно не шифровать для производительности
+                case 62: // ZEND_RETURN - тоже часто используется
+                    should_encrypt = 0;
+                    break;
+                default:
+                    should_encrypt = 1;
+                    break;
             }
         }
-        
-        switch (config->algorithm) {
-            case KAGE_OPCODE_ENCRYPT_XOR:
-                kage_xor_encrypt_op(op, config->key, config->key_length);
-                break;
-                
-            case KAGE_OPCODE_ENCRYPT_AES:
-                kage_aes_encrypt_op(op, config->key, config->key_length);
-                break;
-                
-            case KAGE_OPCODE_ENCRYPT_ROTATE:
-                // Битовый сдвиг
-                op->opcode = (op->opcode << 3) | (op->opcode >> 5);
-                break;
-                
-            case KAGE_OPCODE_ENCRYPT_CUSTOM:
-                // Кастомный алгоритм
-                // Можно реализовать более сложную логику
-                break;
+
+        if (should_encrypt) {
+            switch (config->algorithm) {
+                case KAGE_OPCODE_ENCRYPT_XOR:
+                    kage_xor_encrypt_op(op, config->key, config->key_length);
+                    encrypted_count++;
+                    break;
+
+                case KAGE_OPCODE_ENCRYPT_AES:
+                    kage_aes_encrypt_op(op, config->key, config->key_length);
+                    encrypted_count++;
+                    break;
+
+                case KAGE_OPCODE_ENCRYPT_ROTATE:
+                    // Битовый сдвиг
+                    op->opcode = (op->opcode << 3) | (op->opcode >> 5);
+                    op->extended_value = (op->extended_value << 3) | (op->extended_value >> 29);
+                    encrypted_count++;
+                    break;
+
+                case KAGE_OPCODE_ENCRYPT_CUSTOM:
+                    // Кастомный алгоритм - комбинация XOR + ROTATE
+                    kage_xor_encrypt_op(op, config->key, config->key_length);
+                    op->opcode = (op->opcode << 2) | (op->opcode >> 6);
+                    encrypted_count++;
+                    break;
+            }
         }
     } ZEND_HASH_FOREACH_END();
-    
+
+    // Создаём результат с информацией о шифровании
+    zval *result_data = emalloc(sizeof(zval));
+    array_init(result_data);
+
+    add_assoc_long(result_data, "total_opcodes", bytecode->total_opcodes);
+    add_assoc_long(result_data, "encrypted_opcodes", encrypted_count);
+    add_assoc_double(result_data, "encryption_ratio", (double)encrypted_count / bytecode->total_opcodes);
+    add_assoc_string(result_data, "algorithm",
+        config->algorithm == KAGE_OPCODE_ENCRYPT_XOR ? "XOR" :
+        config->algorithm == KAGE_OPCODE_ENCRYPT_AES ? "AES" :
+        config->algorithm == KAGE_OPCODE_ENCRYPT_ROTATE ? "ROTATE" : "CUSTOM");
+
+    result.result.value = result_data;
     return result;
 }
 
-// Дешифрование опкодов
+// Дешифрование опкодов (симметричные алгоритмы)
 PHPAPI kage_result_t kage_decrypt_opcodes(vld_bytecode_info *bytecode, kage_bytecode_crypto_config *config) {
+    kage_result_t result = {KAGE_SUCCESS, {NULL}};
+
+    if (!bytecode || !config || !config->key) {
+        result.error = KAGE_ERROR_INVALID_INPUT;
+        return result;
+    }
+
     // Для симметричных алгоритмов шифрование/дешифрование одинаково
+    // XOR, ROTATE - симметричны
     return kage_encrypt_opcodes(bytecode, config);
+}
+
+// Runtime дешифрование отдельного опкода
+PHPAPI zval* kage_decrypt_operand_runtime(zval *operand, const char *key, size_t offset) {
+    if (!operand || !key) return operand;
+
+    if (Z_TYPE_P(operand) == IS_STRING && Z_STRVAL_P(operand)) {
+        size_t len = Z_STRLEN_P(operand);
+        for (size_t i = 0; i < len; i++) {
+            Z_STRVAL_P(operand)[i] ^= key[(i + offset) % strlen(key)];
+        }
+    }
+
+    return operand;
 }
 
 // Runtime дешифрование для Zend Engine

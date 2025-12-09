@@ -57,6 +57,7 @@ set(SOURCES
     src/kage_context.c
     src/kage_memory.c
     src/kage_config.c
+    src/bytecode_crypto.c
     src/crypto.c
     src/base64.c
     src/vm.c

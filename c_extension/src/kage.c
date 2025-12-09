@@ -10,6 +10,7 @@
 #include "config.h"
 #include "kage_context.h"
 #include "kage_config.h"
+#include "bytecode_crypto.h"
 #include "crypto.h"
 
 // Define the module globals
@@ -235,11 +236,60 @@ PHP_FUNCTION(kage_encrypt_bytecode) {
         RETURN_FALSE;
     }
 
-    // В реальности нужно парсить VLD вывод и применять шифрование
-    // Пока возвращаем заглушку
-    array_init(return_value);
-    add_assoc_string(return_value, "status", "bytecode_encryption_not_implemented");
-    add_assoc_long(return_value, "opcodes_processed", 0);
+    // Получаем VLD вывод из массива
+    zval *vld_output_zv = zend_hash_str_find(Z_ARRVAL_P(bytecode_zv), "vld_output", sizeof("vld_output") - 1);
+    if (!vld_output_zv || Z_TYPE_P(vld_output_zv) != IS_STRING) {
+        RETURN_FALSE;
+    }
+
+    // Создаём конфигурацию шифрования
+    kage_bytecode_crypto_config crypto_config = {0};
+
+    zval *algorithm_zv = zend_hash_str_find(Z_ARRVAL_P(config_zv), "algorithm", sizeof("algorithm") - 1);
+    if (algorithm_zv && Z_TYPE_P(algorithm_zv) == IS_STRING) {
+        if (strcmp(Z_STRVAL_P(algorithm_zv), "XOR") == 0) {
+            crypto_config.algorithm = KAGE_OPCODE_ENCRYPT_XOR;
+        } else if (strcmp(Z_STRVAL_P(algorithm_zv), "AES") == 0) {
+            crypto_config.algorithm = KAGE_OPCODE_ENCRYPT_AES;
+        } else if (strcmp(Z_STRVAL_P(algorithm_zv), "ROTATE") == 0) {
+            crypto_config.algorithm = KAGE_OPCODE_ENCRYPT_ROTATE;
+        } else {
+            crypto_config.algorithm = KAGE_OPCODE_ENCRYPT_CUSTOM;
+        }
+    } else {
+        crypto_config.algorithm = KAGE_OPCODE_ENCRYPT_XOR; // default
+    }
+
+    zval *key_zv = zend_hash_str_find(Z_ARRVAL_P(config_zv), "key", sizeof("key") - 1);
+    if (key_zv && Z_TYPE_P(key_zv) == IS_STRING) {
+        crypto_config.key = Z_STRVAL_P(key_zv);
+        crypto_config.key_length = Z_STRLEN_P(key_zv);
+    } else {
+        crypto_config.key = "DEFAULT_KAGE_KEY_123";
+        crypto_config.key_length = strlen(crypto_config.key);
+    }
+
+    zval *selective_zv = zend_hash_str_find(Z_ARRVAL_P(config_zv), "selective", sizeof("selective") - 1);
+    crypto_config.selective_encryption = selective_zv && Z_TYPE_P(selective_zv) == IS_TRUE;
+
+    // Парсим VLD вывод
+    vld_bytecode_info *bytecode = kage_parse_vld_output(Z_STRVAL_P(vld_output_zv));
+    if (!bytecode) {
+        RETURN_FALSE;
+    }
+
+    // Шифруем опкоды
+    kage_result_t result = kage_encrypt_opcodes(bytecode, &crypto_config);
+
+    // Освобождаем память
+    kage_free_bytecode_info(bytecode);
+
+    if (result.error != KAGE_SUCCESS) {
+        RETURN_FALSE;
+    }
+
+    // Возвращаем результат
+    RETURN_ZVAL(result.result.value, 0, 1);
 }
 
 // PHP Function: kage_decrypt_bytecode
@@ -250,11 +300,59 @@ PHP_FUNCTION(kage_decrypt_bytecode) {
         RETURN_FALSE;
     }
 
-    // В реальности нужно дешифровать опкоды
-    // Пока возвращаем заглушку
-    array_init(return_value);
-    add_assoc_string(return_value, "status", "bytecode_decryption_not_implemented");
-    add_assoc_long(return_value, "opcodes_restored", 0);
+    // Получаем VLD вывод из массива
+    zval *vld_output_zv = zend_hash_str_find(Z_ARRVAL_P(encrypted_zv), "vld_output", sizeof("vld_output") - 1);
+    if (!vld_output_zv || Z_TYPE_P(vld_output_zv) != IS_STRING) {
+        RETURN_FALSE;
+    }
+
+    // Создаём конфигурацию шифрования (та же что и для дешифрования)
+    kage_bytecode_crypto_config crypto_config = {0};
+
+    zval *algorithm_zv = zend_hash_str_find(Z_ARRVAL_P(config_zv), "algorithm", sizeof("algorithm") - 1);
+    if (algorithm_zv && Z_TYPE_P(algorithm_zv) == IS_STRING) {
+        if (strcmp(Z_STRVAL_P(algorithm_zv), "XOR") == 0) {
+            crypto_config.algorithm = KAGE_OPCODE_ENCRYPT_XOR;
+        } else if (strcmp(Z_STRVAL_P(algorithm_zv), "AES") == 0) {
+            crypto_config.algorithm = KAGE_OPCODE_ENCRYPT_AES;
+        } else if (strcmp(Z_STRVAL_P(algorithm_zv), "ROTATE") == 0) {
+            crypto_config.algorithm = KAGE_OPCODE_ENCRYPT_ROTATE;
+        } else {
+            crypto_config.algorithm = KAGE_OPCODE_ENCRYPT_CUSTOM;
+        }
+    } else {
+        crypto_config.algorithm = KAGE_OPCODE_ENCRYPT_XOR; // default
+    }
+
+    zval *key_zv = zend_hash_str_find(Z_ARRVAL_P(config_zv), "key", sizeof("key") - 1);
+    if (key_zv && Z_TYPE_P(key_zv) == IS_STRING) {
+        crypto_config.key = Z_STRVAL_P(key_zv);
+        crypto_config.key_length = Z_STRLEN_P(key_zv);
+    } else {
+        crypto_config.key = "DEFAULT_KAGE_KEY_123";
+        crypto_config.key_length = strlen(crypto_config.key);
+    }
+
+    crypto_config.selective_encryption = 0; // Для дешифрования шифруем все
+
+    // Парсим VLD вывод
+    vld_bytecode_info *bytecode = kage_parse_vld_output(Z_STRVAL_P(vld_output_zv));
+    if (!bytecode) {
+        RETURN_FALSE;
+    }
+
+    // Дешифруем опкоды (симметричный алгоритм)
+    kage_result_t result = kage_decrypt_opcodes(bytecode, &crypto_config);
+
+    // Освобождаем память
+    kage_free_bytecode_info(bytecode);
+
+    if (result.error != KAGE_SUCCESS) {
+        RETURN_FALSE;
+    }
+
+    // Возвращаем результат
+    RETURN_ZVAL(result.result.value, 0, 1);
 }
 
 #ifdef COMPILE_DL_KAGE
