@@ -68,113 +68,141 @@ char* kage_base64_encode(const unsigned char *input, size_t input_length, size_t
     return encoded_data;
 }
 
-unsigned char* kage_base64_decode(const char *data, size_t input_length, size_t *output_length) {
-    if (data == NULL) {
-        if (output_length != NULL) {
-            *output_length = 0;
-        }
-        return NULL;
-    }
-    if (output_length == NULL) {
-        return NULL;
-    }
-    static const char T[] = {
-        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
-        -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
-        -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1
-    };
+// Base64 decoding lookup table
+static const char BASE64_DECODE_TABLE[] = {
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
+    -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
+    -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1
+};
 
-    *output_length = 0;
-    
-    // Skip any leading whitespace
-    while (input_length > 0 && (*data == ' ' || *data == '\t' || *data == '\n' || *data == '\r')) {
-        data++;
-        input_length--;
+// Helper function to validate base64 input
+static int kage_base64_validate_input(const char *data, size_t input_length, size_t *padding) {
+    if (!data || input_length == 0) {
+        return 0;
     }
-    
-    // Skip any trailing whitespace
-    while (input_length > 0 && (data[input_length - 1] == ' ' || data[input_length - 1] == '\t' || 
-           data[input_length - 1] == '\n' || data[input_length - 1] == '\r')) {
-        input_length--;
-    }
-    
+
+    // Check length is multiple of 4
     if (input_length % 4 != 0) {
+        return 0;
+    }
+
+    // Count padding characters
+    *padding = 0;
+    if (data[input_length - 1] == '=') {
+        (*padding)++;
+    }
+    if (input_length > 1 && data[input_length - 2] == '=') {
+        (*padding)++;
+    }
+
+    return 1;
+}
+
+// Helper function to decode a single base64 character
+static int kage_base64_decode_char(char c) {
+    // No need to check c >= 128 since char can be negative
+    return BASE64_DECODE_TABLE[(unsigned char)c];
+}
+
+// Helper function to decode a base64 quartet
+static int kage_base64_decode_quartet(const char *input, unsigned char *output, size_t *output_pos, int *remaining) {
+    int b1 = kage_base64_decode_char(input[0]);
+    int b2 = kage_base64_decode_char(input[1]);
+    int b3 = kage_base64_decode_char(input[2]);
+    int b4 = kage_base64_decode_char(input[3]);
+
+    if (b1 < 0 || b2 < 0) {
+        return 0; // Invalid characters
+    }
+
+    // First byte
+    output[(*output_pos)++] = (b1 << 2) | (b2 >> 4);
+
+    if (input[2] == '=') {
+        *remaining = 1;
+        return 1; // End of data
+    }
+
+    if (b3 < 0) {
+        return 0; // Invalid character
+    }
+
+    // Second byte
+    output[(*output_pos)++] = ((b2 & 0x0F) << 4) | (b3 >> 2);
+
+    if (input[3] == '=') {
+        *remaining = 2;
+        return 1; // End of data
+    }
+
+    if (b4 < 0) {
+        return 0; // Invalid character
+    }
+
+    // Third byte
+    output[(*output_pos)++] = ((b3 & 0x03) << 6) | b4;
+
+    *remaining = 3;
+    return 1;
+}
+
+unsigned char* kage_base64_decode(const char *data, size_t input_length, size_t *output_length) {
+    if (!data || !output_length) {
+        if (output_length) *output_length = 0;
         return NULL;
     }
 
+    // Trim whitespace
+    const char *start = data;
+    const char *end = data + input_length - 1;
+
+    while (start <= end && (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r')) {
+        start++;
+    }
+    while (end >= start && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) {
+        end--;
+    }
+
+    size_t trimmed_length = end - start + 1;
+    if (trimmed_length == 0) {
+        *output_length = 0;
+        return emalloc(1); // Return empty buffer
+    }
+
+    // Validate input
     size_t padding = 0;
-    if (input_length > 0) {
-        if (data[input_length - 1] == '=') {
-            padding++;
-        }
-        if ((input_length > 1) && (data[input_length - 2] == '=')) {
-            padding++;
-        }
-    }
-    
-    *output_length = (input_length / 4) * 3 - padding;
-    
-    unsigned char *decoded_data = emalloc(*output_length + 1);
-    if (decoded_data == NULL) {
+    if (!kage_base64_validate_input(start, trimmed_length, &padding)) {
+        *output_length = 0;
         return NULL;
     }
 
-    uint32_t i_val = 0;
-    uint32_t j_val = 0;
-    for (i_val = 0; i_val < input_length; i_val += 4) {
-        int v = 0;
-        int k;
-        
-        // Skip any whitespace between groups
-        while ((i_val < input_length) && ((data[i_val] == ' ') || (data[i_val] == '\t') || (data[i_val] == '\n') || (data[i_val] == '\r'))) {
-            i_val++;
-        }
-        if (i_val >= input_length) {
-            break;
-        }
-        
-        k = data[i_val]; 
-        if ((k < 0) || (k >= 128) || (v = T[k]) < 0) {
-            efree(decoded_data); 
-            return NULL;
-        }
-        uint32_t b1 = (uint32_t)v;
+    // Calculate output size
+    *output_length = (trimmed_length / 4) * 3 - padding;
 
-        k = data[i_val+1]; 
-        if ((k < 0) || (k >= 128) || (v = T[k]) < 0) {
-            efree(decoded_data); 
-            return NULL;
-        }
-        uint32_t b2 = (uint32_t)v;
-        
-        decoded_data[j_val++] = (b1 << 2) | (b2 >> 4);
-        
-        if (data[i_val+2] == '=') {
-            break;
-        }
-        k = data[i_val+2];
-        if ((k < 0) || (k >= 128) || (v = T[k]) < 0) {
-            efree(decoded_data); 
-            return NULL;
-        }
-        uint32_t b3 = (uint32_t)v;
-        
-        decoded_data[j_val++] = ((b2 & 0x0F) << 4) | (b3 >> 2);
-
-        if (data[i_val+3] == '=') {
-            break;
-        }
-        k = data[i_val+3];
-        if ((k < 0) || (k >= 128) || (v = T[k]) < 0) {
-            efree(decoded_data); 
-            return NULL;
-        }
-        uint32_t b4 = (uint32_t)v;
-        
-        decoded_data[j_val++] = ((b3 & 0x03) << 6) | b4;
+    // Allocate output buffer
+    unsigned char *decoded_data = emalloc(*output_length + 1);
+    if (!decoded_data) {
+        *output_length = 0;
+        return NULL;
     }
 
+    // Decode in quartets
+    size_t output_pos = 0;
+    for (size_t i = 0; i < trimmed_length; i += 4) {
+        int remaining = 0;
+        if (!kage_base64_decode_quartet(start + i, decoded_data, &output_pos, &remaining)) {
+            efree(decoded_data);
+            *output_length = 0;
+            return NULL;
+        }
+
+        if (remaining < 3) {
+            break; // Reached padding
+        }
+    }
+
+    // Null terminate
     decoded_data[*output_length] = '\0';
     return decoded_data;
 } 
