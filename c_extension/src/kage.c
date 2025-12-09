@@ -149,6 +149,47 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_kage_ast_to_bytecode, 0, 0, 2)
     ZEND_ARG_INFO(0, key)
 ZEND_END_ARG_INFO()
 
+// Temporarily commented out until implementations are complete
+// ZEND_BEGIN_ARG_INFO_EX(arginfo_kage_compile_php, 0, 0, 2)
+//     ZEND_ARG_INFO(0, php_code)
+//     ZEND_ARG_INFO(0, encryption_key)
+// ZEND_END_ARG_INFO()
+//
+// ZEND_BEGIN_ARG_INFO_EX(arginfo_kage_execute_php_bytecode, 0, 0, 1)
+//     ZEND_ARG_INFO(0, bytecode_data)
+// ZEND_END_ARG_INFO()
+//
+// ZEND_BEGIN_ARG_INFO_EX(arginfo_kage_extract_php_bytecode, 0, 0, 1)
+//     ZEND_ARG_INFO(0, php_code)
+// ZEND_END_ARG_INFO()
+//
+// ZEND_BEGIN_ARG_INFO_EX(arginfo_kage_compile_php, 0, 0, 2)
+//     ZEND_ARG_INFO(0, php_code)
+//     ZEND_ARG_INFO(0, encryption_key)
+// ZEND_END_ARG_INFO()
+//
+// ZEND_BEGIN_ARG_INFO_EX(arginfo_kage_execute_php_bytecode, 0, 0, 1)
+//     ZEND_ARG_INFO(0, bytecode_data)
+// ZEND_END_ARG_INFO()
+//
+// ZEND_BEGIN_ARG_INFO_EX(arginfo_kage_extract_php_bytecode, 0, 0, 1)
+//     ZEND_ARG_INFO(0, php_code)
+// ZEND_END_ARG_INFO()
+//
+// ZEND_BEGIN_ARG_INFO_EX(arginfo_kage_compile_php_code, 0, 0, 1)
+//     ZEND_ARG_INFO(0, php_code)
+// ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_kage_encrypt_bytecode, 0, 0, 2)
+    ZEND_ARG_INFO(0, bytecode_info)
+    ZEND_ARG_INFO(0, config)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_kage_decrypt_bytecode, 0, 0, 2)
+    ZEND_ARG_INFO(0, encrypted_bytecode)
+    ZEND_ARG_INFO(0, config)
+ZEND_END_ARG_INFO()
+
 // Function entries
 const zend_function_entry kage_functions[] = {
     PHP_FE(kage_encrypt_c, arginfo_kage_encrypt_c)
@@ -157,6 +198,10 @@ const zend_function_entry kage_functions[] = {
     PHP_FE(kage_vm_decrypt, arginfo_kage_vm_decrypt)
     PHP_FE(kage_ast_parse, arginfo_kage_ast_parse)
     PHP_FE(kage_ast_to_bytecode, arginfo_kage_ast_to_bytecode)
+    // PHP_FE(kage_extract_php_bytecode, arginfo_kage_extract_php_bytecode)
+    // PHP_FE(kage_compile_php_code, arginfo_kage_compile_php_code)
+    // PHP_FE(kage_encrypt_bytecode, arginfo_kage_encrypt_bytecode)
+    // PHP_FE(kage_decrypt_bytecode, arginfo_kage_decrypt_bytecode)
     PHP_FE_END
 };
 
@@ -177,6 +222,40 @@ zend_module_entry kage_module_entry = {
     NULL,
     STANDARD_MODULE_PROPERTIES_EX
 };
+
+// PHP Function implementations will be added when ready
+// PHP_FUNCTION(kage_extract_php_bytecode) { ... }
+// PHP_FUNCTION(kage_compile_php_code) { ... }
+
+// PHP Function: kage_encrypt_bytecode
+PHP_FUNCTION(kage_encrypt_bytecode) {
+    zval *bytecode_zv, *config_zv;
+
+    if (zend_parse_parameters(ZEND_NUM_ARGS(), "aa", &bytecode_zv, &config_zv) == FAILURE) {
+        RETURN_FALSE;
+    }
+
+    // В реальности нужно парсить VLD вывод и применять шифрование
+    // Пока возвращаем заглушку
+    array_init(return_value);
+    add_assoc_string(return_value, "status", "bytecode_encryption_not_implemented");
+    add_assoc_long(return_value, "opcodes_processed", 0);
+}
+
+// PHP Function: kage_decrypt_bytecode
+PHP_FUNCTION(kage_decrypt_bytecode) {
+    zval *encrypted_zv, *config_zv;
+
+    if (zend_parse_parameters(ZEND_NUM_ARGS(), "aa", &encrypted_zv, &config_zv) == FAILURE) {
+        RETURN_FALSE;
+    }
+
+    // В реальности нужно дешифровать опкоды
+    // Пока возвращаем заглушку
+    array_init(return_value);
+    add_assoc_string(return_value, "status", "bytecode_decryption_not_implemented");
+    add_assoc_long(return_value, "opcodes_restored", 0);
+}
 
 #ifdef COMPILE_DL_KAGE
 #ifdef ZTS
