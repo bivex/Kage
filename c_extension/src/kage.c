@@ -8,9 +8,9 @@
  */
 
 #include "config.h"
+#include "kage_context.h"
+#include "kage_config.h"
 #include "crypto.h"
-#include "vm.h"
-#include "ast.h"
 
 // Define the module globals
 ZEND_DECLARE_MODULE_GLOBALS(kage)
@@ -43,25 +43,56 @@ static void kage_ast_dtor(zend_resource *res) {
 PHP_MINIT_FUNCTION(kage)
 {
     REGISTER_INI_ENTRIES();
+
     // Initialize libsodium
     if (sodium_init() == -1) {
         zend_error(E_WARNING, "Kage: libsodium initialization failed.");
         return FAILURE;
     }
 
+    // Initialize Kage context system
+    // kage_context *ctx = kage_context_get();
+    // if (!ctx || kage_context_init(ctx) != KAGE_SUCCESS) {
+    //     zend_error(E_WARNING, "Kage: Context initialization failed.");
+    //     return FAILURE;
+    // }
+
+    // Initialize configuration system
+    kage_config *config = kage_config_get();
+    if (!config || kage_config_init(config) != KAGE_SUCCESS) {
+        zend_error(E_WARNING, "Kage: Configuration initialization failed.");
+        return FAILURE;
+    }
+
+    // Load configuration from environment and PHP ini
+    kage_config_load_from_env(config);
+    kage_config_load_from_php_ini(config);
+
     // Register AST resource type
     le_kage_ast = zend_register_list_destructors_ex(
         kage_ast_dtor, NULL, "Kage AST", module_number
     );
-    
+
     // Register constants
     REGISTER_STRING_CONSTANT("KAGE_VERSION", PHP_KAGE_VERSION, CONST_CS | CONST_PERSISTENT);
-    
+
     return SUCCESS;
 }
 
 PHP_MSHUTDOWN_FUNCTION(kage)
 {
+    // Clean up context system
+    kage_context *ctx = kage_get_context();
+    if (ctx) {
+        kage_context_destroy(ctx);
+    }
+
+    // Clean up configuration system
+    kage_config *config = kage_config_get();
+    if (config) {
+        kage_config_destroy(config);
+    }
+
     UNREGISTER_INI_ENTRIES();
     return SUCCESS;
 }

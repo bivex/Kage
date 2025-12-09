@@ -45,7 +45,7 @@ typedef struct {
 // AST Functions
 PHPAPI kage_ast_node* kage_ast_parse(const char *source);
 PHPAPI void kage_ast_free(kage_ast_node *node);
-PHPAPI zend_result kage_ast_to_bytecode(kage_ast_node *node, kage_vm_state *state);
+PHPAPI int kage_ast_to_bytecode(kage_ast_node *node, kage_vm_state *state);
 
 // PHP Functions
 PHP_FUNCTION(kage_ast_parse);

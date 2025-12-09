@@ -13,8 +13,8 @@
 #include "config.h"
 
 // Internal functions
-zend_result kage_internal_encrypt(zval *return_value, zval *data, zend_string *key);
-zend_result kage_internal_decrypt(zval *return_value, zval *encrypted_data, zend_string *key);
+int kage_internal_encrypt(zval *return_value, zval *data, zend_string *key);
+int kage_internal_decrypt(zval *return_value, zval *encrypted_data, zend_string *key);
 
 /**
  * Encrypts data using libsodium's crypto_secretbox_easy

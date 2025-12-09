@@ -41,11 +41,11 @@ typedef struct {
 #define KAGE_VM_STACK_SIZE 1024
 
 // VM functions
-PHPAPI zend_result kage_vm_init(kage_vm_state *state, size_t stack_size);
+PHPAPI int kage_vm_init(kage_vm_state *state, size_t stack_size);
 PHPAPI void kage_vm_destroy(kage_vm_state *state);
-PHPAPI zend_result kage_vm_push(kage_vm_state *state, zval *value);
-PHPAPI zend_result kage_vm_pop(kage_vm_state *state, zval *result);
-PHPAPI zend_result kage_vm_execute(kage_vm_state *state);
+PHPAPI int kage_vm_push(kage_vm_state *state, zval *value);
+PHPAPI int kage_vm_pop(kage_vm_state *state, zval *result);
+PHPAPI int kage_vm_execute(kage_vm_state *state);
 
 // PHP functions
 PHP_FUNCTION(kage_vm_encrypt);
