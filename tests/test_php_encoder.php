@@ -1,6 +1,6 @@
 <?php
 
-require_once 'php_encoder.php';
+require_once '../src/php_encoder.php';
 
 try {
     // Create encoder instance
@@ -8,7 +8,6 @@ try {
     
     // More complex PHP code to encode
     $phpCode = <<<'PHP'
-<?php
 // Test function
 function testFunction() {
     return "Function called successfully!";
