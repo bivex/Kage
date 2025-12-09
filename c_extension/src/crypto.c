@@ -75,25 +75,111 @@ static vld_bytecode_info* kage_extract_bytecode_from_php(const char *php_code, s
     return bytecode;
 }
 
-// Function to reconstruct PHP code from decrypted bytecode (simplified)
-static char* kage_reconstruct_php_from_bytecode(vld_bytecode_info *bytecode) {
-    if (!bytecode || !bytecode->functions) {
-        return NULL;
-    }
+// Structure to hold PHP code with encrypted bytecode
+typedef struct {
+    char *original_php_code;
+    vld_bytecode_info *encrypted_bytecode;
+} php_bytecode_package;
+
+// Function to create a package with original PHP code and encrypted bytecode
+static php_bytecode_package* kage_create_php_package(const char *php_code, size_t code_len) {
+    php_bytecode_package *package = emalloc(sizeof(php_bytecode_package));
+    package->original_php_code = estrndup(php_code, code_len);
+
+    // Extract and encrypt bytecode
+    package->encrypted_bytecode = kage_extract_bytecode_from_php(php_code, code_len);
+
+    return package;
+}
+
+// Function to serialize PHP package
+static char* kage_serialize_php_package(php_bytecode_package *package) {
+    if (!package) return NULL;
 
     smart_str result = {0};
-    smart_str_appends(&result, "<?php\n");
 
-    // For now, just return a placeholder - full reconstruction would be complex
-    smart_str_appends(&result, "// Decrypted bytecode placeholder\n");
-    smart_str_appends(&result, "echo \"Bytecode decrypted successfully\\n\";\n");
+    // Store original PHP code length and content
+    uint32_t code_len = strlen(package->original_php_code);
+    smart_str_appendc(&result, 'P'); // Package marker
+    smart_str_append_long(&result, code_len);
+    smart_str_appendc(&result, ':');
+    smart_str_appendl(&result, package->original_php_code, code_len);
+
+    // Serialize encrypted bytecode
+    char *serialized_bytecode = kage_serialize_bytecode(package->encrypted_bytecode);
+    if (serialized_bytecode) {
+        uint32_t bytecode_len = strlen(serialized_bytecode);
+        smart_str_appendc(&result, 'B'); // Bytecode marker
+        smart_str_append_long(&result, bytecode_len);
+        smart_str_appendc(&result, ':');
+        smart_str_appendl(&result, serialized_bytecode, bytecode_len);
+        efree(serialized_bytecode);
+    }
 
     smart_str_0(&result);
 
-    char *php_code = estrndup(result.s->val, result.s->len);
+    char *serialized = estrndup(result.s->val, result.s->len);
     smart_str_free(&result);
 
-    return php_code;
+    return serialized;
+}
+
+// Function to unserialize PHP package
+static php_bytecode_package* kage_unserialize_php_package(const char *serialized) {
+    if (!serialized || serialized[0] != 'P') return NULL;
+
+    php_bytecode_package *package = emalloc(sizeof(php_bytecode_package));
+    memset(package, 0, sizeof(php_bytecode_package));
+
+    const char *ptr = serialized + 1; // Skip 'P' marker
+
+    // Parse PHP code
+    char *endptr;
+    uint32_t code_len = strtol(ptr, &endptr, 10);
+    if (*endptr != ':') {
+        efree(package);
+        return NULL;
+    }
+    ptr = endptr + 1;
+    package->original_php_code = estrndup(ptr, code_len);
+    ptr += code_len;
+
+    // Parse bytecode if present
+    if (*ptr == 'B') {
+        ptr++; // Skip 'B' marker
+        uint32_t bytecode_len = strtol(ptr, &endptr, 10);
+        if (*endptr == ':') {
+            ptr = endptr + 1;
+            char *bytecode_data = estrndup(ptr, bytecode_len);
+            package->encrypted_bytecode = kage_unserialize_bytecode(bytecode_data);
+            efree(bytecode_data);
+        }
+    }
+
+    return package;
+}
+
+// Function to free PHP package
+static void kage_free_php_package(php_bytecode_package *package) {
+    if (!package) return;
+
+    if (package->original_php_code) {
+        efree(package->original_php_code);
+    }
+    if (package->encrypted_bytecode) {
+        kage_free_bytecode_info(package->encrypted_bytecode);
+    }
+    efree(package);
+}
+
+// Function to reconstruct PHP code from decrypted bytecode (now returns original code)
+static char* kage_reconstruct_php_from_bytecode(php_bytecode_package *package) {
+    if (!package || !package->original_php_code) {
+        return NULL;
+    }
+
+    // Return the original PHP code
+    return estrndup(package->original_php_code, strlen(package->original_php_code));
 }
 
 // Internal encryption function - improved with error handling
@@ -230,10 +316,22 @@ PHP_FUNCTION(kage_encrypt_c) {
         RETURN_FALSE;
     }
 
-    // Extract bytecode from PHP code
-    vld_bytecode_info *bytecode = kage_extract_bytecode_from_php(ZSTR_VAL(php_code), ZSTR_LEN(php_code));
-    if (!bytecode) {
-        zend_error(E_WARNING, "Kage: Failed to extract bytecode from PHP code");
+    // Validate inputs
+    if (ZSTR_LEN(php_code) == 0) {
+        zend_error(E_WARNING, "Kage: PHP code cannot be empty");
+        RETURN_FALSE;
+    }
+
+    if (ZSTR_LEN(key) != 32) {
+        zend_error(E_WARNING, "Kage: Invalid encryption key length (must be 32 bytes)");
+        RETURN_FALSE;
+    }
+
+    // Create PHP package with original code and encrypted bytecode
+    php_bytecode_package *package = kage_create_php_package(ZSTR_VAL(php_code), ZSTR_LEN(php_code));
+    if (!package || !package->encrypted_bytecode) {
+        if (package) kage_free_php_package(package);
+        zend_error(E_WARNING, "Kage: Failed to create PHP bytecode package");
         RETURN_FALSE;
     }
 
@@ -245,23 +343,23 @@ PHP_FUNCTION(kage_encrypt_c) {
     crypto_config.selective_encryption = 0; // Encrypt all opcodes
 
     // Encrypt opcodes
-    kage_result_t encrypt_result = kage_encrypt_opcodes(bytecode, &crypto_config);
+    kage_result_t encrypt_result = kage_encrypt_opcodes(package->encrypted_bytecode, &crypto_config);
     if (encrypt_result.error != KAGE_SUCCESS) {
-        kage_free_bytecode_info(bytecode);
+        kage_free_php_package(package);
         zend_error(E_WARNING, "Kage: Failed to encrypt bytecode");
         RETURN_FALSE;
     }
 
-    // Serialize encrypted bytecode
-    char *serialized = kage_serialize_bytecode(bytecode);
+    // Serialize the complete package
+    char *serialized = kage_serialize_php_package(package);
     if (!serialized) {
-        kage_free_bytecode_info(bytecode);
-        zend_error(E_WARNING, "Kage: Failed to serialize encrypted bytecode");
+        kage_free_php_package(package);
+        zend_error(E_WARNING, "Kage: Failed to serialize PHP package");
         RETURN_FALSE;
     }
 
     // Clean up
-    kage_free_bytecode_info(bytecode);
+    kage_free_php_package(package);
 
     // Return base64 encoded result for easier handling
     size_t encoded_len;
@@ -286,6 +384,17 @@ PHP_FUNCTION(kage_decrypt_c) {
         RETURN_FALSE;
     }
 
+    // Validate inputs
+    if (ZSTR_LEN(encrypted_data) == 0) {
+        zend_error(E_WARNING, "Kage: Encrypted data cannot be empty");
+        RETURN_FALSE;
+    }
+
+    if (ZSTR_LEN(key) != 32) {
+        zend_error(E_WARNING, "Kage: Invalid decryption key length (must be 32 bytes)");
+        RETURN_FALSE;
+    }
+
     // Decode from base64 first
     size_t decoded_len;
     unsigned char *decoded = kage_base64_decode(ZSTR_VAL(encrypted_data), ZSTR_LEN(encrypted_data), &decoded_len);
@@ -294,12 +403,12 @@ PHP_FUNCTION(kage_decrypt_c) {
         RETURN_FALSE;
     }
 
-    // Unserialize bytecode
-    vld_bytecode_info *bytecode = kage_unserialize_bytecode((char*)decoded);
+    // Unserialize PHP package
+    php_bytecode_package *package = kage_unserialize_php_package((char*)decoded);
     efree(decoded);
 
-    if (!bytecode) {
-        zend_error(E_WARNING, "Kage: Failed to unserialize bytecode");
+    if (!package) {
+        zend_error(E_WARNING, "Kage: Failed to unserialize PHP package");
         RETURN_FALSE;
     }
 
@@ -311,18 +420,18 @@ PHP_FUNCTION(kage_decrypt_c) {
     crypto_config.selective_encryption = 0; // Decrypt all opcodes
 
     // Decrypt opcodes
-    kage_result_t decrypt_result = kage_decrypt_opcodes(bytecode, &crypto_config);
+    kage_result_t decrypt_result = kage_decrypt_opcodes(package->encrypted_bytecode, &crypto_config);
     if (decrypt_result.error != KAGE_SUCCESS) {
-        kage_free_bytecode_info(bytecode);
+        kage_free_php_package(package);
         zend_error(E_WARNING, "Kage: Failed to decrypt bytecode");
         RETURN_FALSE;
     }
 
-    // Reconstruct PHP code from decrypted bytecode
-    char *php_code = kage_reconstruct_php_from_bytecode(bytecode);
+    // Reconstruct PHP code from decrypted bytecode (returns original code)
+    char *php_code = kage_reconstruct_php_from_bytecode(package);
 
     // Clean up
-    kage_free_bytecode_info(bytecode);
+    kage_free_php_package(package);
 
     if (!php_code) {
         zend_error(E_WARNING, "Kage: Failed to reconstruct PHP code from bytecode");
@@ -331,4 +440,4 @@ PHP_FUNCTION(kage_decrypt_c) {
 
     RETVAL_STRING(php_code);
     efree(php_code);
-} 
+}
