@@ -144,6 +144,8 @@ Before installing Kage, ensure your system meets the following requirements:
 - **Operating System**: Linux (tested on Debian/Ubuntu-based systems)
 - **PHP Version**: PHP 7.4 or higher (PHP 8.0+ recommended for full compatibility)
 - **Build Tools**: GCC compiler, Make, CMake, and development libraries
+- **Optional Extensions**:
+  - `php-vld` (Vulcan Logic Dumper - for bytecode analysis and debugging)
 - **Required Libraries**:
   - `libsodium-dev` (for cryptographic operations)
   - `php7.4-dev` or equivalent for your PHP version (for building the C extension)
@@ -275,6 +277,47 @@ Kage's bytecode encryption operates at the Zend Engine opcode level, providing s
 | Runtime Performance | High overhead | Minimal overhead |
 | Reverse Engineering | Moderate difficulty | Very difficult |
 | Key Management | File-based | Runtime-based |
+
+### VLD Integration
+
+Kage integrates with **VLD (Vulcan Logic Dumper)** - a PHP extension for analyzing Zend Engine opcodes. The following VLD-derived functions are used:
+
+#### Core VLD Functions Used:
+
+**`kage_parse_vld_output(const char *vld_output)`**
+- Parses VLD textual output into structured opcode data
+- Converts VLD format to `vld_bytecode_info` structure
+- Extracts function definitions, opcodes, and operands
+
+**`vld_bytecode_info` Structure:**
+```c
+typedef struct {
+    HashTable *functions;      // Function definitions
+    HashTable *opcodes;        // Opcode sequences
+    char *source_file;         // Source file path
+    size_t total_opcodes;      // Total opcode count
+} vld_bytecode_info;
+```
+
+#### VLD Workflow in Kage:
+
+1. **VLD Analysis**: `php -d vld.active=1 -d vld.execute=0 script.php`
+2. **Output Parsing**: Convert VLD text format to structured data
+3. **Opcode Processing**: Analyze and prepare opcodes for encryption
+4. **Encryption Application**: Apply selected algorithm to opcode data
+5. **Serialization**: Store encrypted bytecode with metadata
+
+#### VLD Output Example:
+```
+Function name: example_function
+Number of ops: 5
+Compiled variables: !0=$a, !1=$b
+line #0: $a = 5
+line #1: $b = $a + 1
+line #2: ECHO $b
+```
+
+This VLD integration enables Kage to work with standard PHP opcode analysis tools while providing advanced encryption capabilities.
 
 ## Configuration
 
@@ -762,6 +805,12 @@ A: Self-decrypting files contain encrypted bytecode and decryption logic. When e
 
 **Q: Which encryption algorithm should I choose?**
 A: XOR for performance, AES for maximum security, ROTATE for simple obfuscation. Most applications should use AES for production.
+
+**Q: What is VLD and why is it used in Kage?**
+A: VLD (Vulcan Logic Dumper) is a PHP extension that provides detailed analysis of Zend Engine opcodes. Kage uses VLD's output parsing capabilities through the `kage_parse_vld_output()` function to convert textual opcode dumps into structured data for encryption. VLD integration enables bytecode-level protection while maintaining compatibility with standard PHP analysis tools.
+
+**Q: Do I need VLD extension installed to use Kage?**
+A: VLD is optional for basic encryption/decryption operations. However, it's recommended for advanced debugging and bytecode analysis features. The C extension handles all core encryption without requiring VLD at runtime.
 
 **Q: Does bytecode encryption affect application performance?**
 A: Minimal impact (<5%) with the C extension. The decryption happens at runtime and is highly optimized.
