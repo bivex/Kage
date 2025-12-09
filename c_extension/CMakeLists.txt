@@ -54,6 +54,9 @@ pkg_check_modules(SODIUM REQUIRED libsodium)
 
 set(SOURCES
     src/kage.c
+    src/kage_context.c
+    src/kage_memory.c
+    src/kage_config.c
     src/crypto.c
     src/base64.c
     src/vm.c
