@@ -12,7 +12,7 @@
 #include "base64.h"
 
 // Initialize VM state
-PHPAPI zend_result kage_vm_init(kage_vm_state *state, size_t stack_size) {
+PHPAPI int kage_vm_init(kage_vm_state *state, size_t stack_size) {
     state->stack = ecalloc(stack_size, sizeof(zval));
     state->stack_size = 0;  // Current stack size
     state->stack_ptr = 0;   // Stack pointer
@@ -47,7 +47,7 @@ PHPAPI void kage_vm_destroy(kage_vm_state *state) {
 }
 
 // Push value onto stack
-PHPAPI zend_result kage_vm_push(kage_vm_state *state, zval *value) {
+PHPAPI int kage_vm_push(kage_vm_state *state, zval *value) {
     if (state->stack_ptr >= KAGE_VM_STACK_SIZE) {
         return FAILURE;
     }
@@ -57,7 +57,7 @@ PHPAPI zend_result kage_vm_push(kage_vm_state *state, zval *value) {
 }
 
 // Pop value from stack
-PHPAPI zend_result kage_vm_pop(kage_vm_state *state, zval *result) {
+PHPAPI int kage_vm_pop(kage_vm_state *state, zval *result) {
     if (state->stack_ptr == 0) {
         return FAILURE;
     }
@@ -67,7 +67,7 @@ PHPAPI zend_result kage_vm_pop(kage_vm_state *state, zval *result) {
 }
 
 // Execute VM instructions
-PHPAPI zend_result kage_vm_execute(kage_vm_state *state) {
+PHPAPI int kage_vm_execute(kage_vm_state *state) {
     if (!state || !state->instructions) {
         return FAILURE;
     }

@@ -1,0 +1,26 @@
+# Build artifacts
+c_extension/build/
+c_extension/artifacts/
+*.so
+*.o
+
+# Backup files
+*.backup
+*~
+
+# Test files
+c_extension/test_verify.sh
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
