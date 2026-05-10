@@ -10,13 +10,13 @@
 static unsigned char kage_opcode_from_string(const char *opcode_str) {
     unsigned char opcode = 0;
 
-    if (strcmp(opcode_str, "ASSIGN") == 0)      opcode = 38;   // ZEND_ASSIGN
-    else if (strcmp(opcode_str, "ECHO") == 0)   opcode = 40;   // ZEND_ECHO
-    else if (strcmp(opcode_str, "ADD") == 0)    opcode = 1;    // ZEND_ADD
-    else if (strcmp(opcode_str, "SUB") == 0)    opcode = 2;    // ZEND_SUB
-    else if (strcmp(opcode_str, "MUL") == 0)    opcode = 3;    // ZEND_MUL
-    else if (strcmp(opcode_str, "RETURN") == 0) opcode = 62;  // ZEND_RETURN
-    else opcode = 0; // NOP
+    if (strcmp(opcode_str, "ASSIGN") == 0)      opcode = KAGE_ZEND_ASSIGN;
+    else if (strcmp(opcode_str, "ECHO") == 0)   opcode = KAGE_ZEND_ECHO;
+    else if (strcmp(opcode_str, "ADD") == 0)    opcode = KAGE_ZEND_ADD;
+    else if (strcmp(opcode_str, "SUB") == 0)    opcode = KAGE_ZEND_SUB;
+    else if (strcmp(opcode_str, "MUL") == 0)    opcode = KAGE_ZEND_MUL;
+    else if (strcmp(opcode_str, "RETURN") == 0) opcode = KAGE_ZEND_RETURN;
+    else opcode = KAGE_ZEND_NOP;
 
     return opcode;
 }
@@ -34,10 +34,10 @@ static void kage_parse_operands(const char *operands, zend_op_encrypted *op) {
 // Helper: extract filename from line
 static void kage_extract_filename(const char *line, vld_bytecode_info *info) {
     if (info->source_file) return; // Already extracted
-    
+
     char *filename_start = strstr(line, "filename:");
     if (filename_start) {
-        filename_start += 9; // strlen("filename:")
+        filename_start += KAGE_FILENAME_PREFIX_LEN;
         while (*filename_start == ' ') filename_start++;
         info->source_file = estrndup(filename_start, strlen(filename_start));
     }
@@ -55,14 +55,14 @@ PHPAPI vld_bytecode_info* kage_parse_vld_output(const char *vld_output) {
     info->source_file = NULL;
     info->total_opcodes = 0;
 
-    zend_hash_init(info->functions, 8, NULL, NULL, 0);
-    zend_hash_init(info->opcodes, 64, NULL, NULL, 0);
+    zend_hash_init(info->functions, KAGE_HASH_SIZE_FUNCTIONS, NULL, NULL, 0);
+    zend_hash_init(info->opcodes, KAGE_HASH_SIZE_OPCODES, NULL, NULL, 0);
 
     // Парсим VLD вывод построчно
     char *output_copy = estrndup(vld_output, strlen(vld_output));
     char *line = strtok(output_copy, "\n");
     int lineno, op_num;
-    char opcode_str[256];
+    char opcode_str[KAGE_VLD_OPCODE_STR_MAX];
 
     while (line) {
         // Парсим строку таблицы опкодов
@@ -142,7 +142,7 @@ static void kage_custom_encrypt_op(zend_op_encrypted *op, const char *key, size_
 static bool kage_should_encrypt_opcode(unsigned char opcode, bool selective_encryption) {
     bool should_encrypt = true;
     if (selective_encryption) {
-        should_encrypt = (opcode != 40 && opcode != 62); // Skip ECHO and RETURN
+        should_encrypt = (opcode != KAGE_ZEND_ECHO && opcode != KAGE_ZEND_RETURN);
     }
     return should_encrypt;
 }

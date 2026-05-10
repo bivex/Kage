@@ -117,43 +117,55 @@ static int kage_base64_decode_char(char c) {
     return BASE64_DECODE_TABLE[(unsigned char)c];
 }
 
-// Helper function to decode a base64 quartet (single exit point)
-static int kage_base64_decode_quartet(const char *input, unsigned char *output, size_t *output_pos, int *remaining) {
-    int result = 0; // Assume failure
-    int b1, b2, b3, b4;
-
-    b1 = kage_base64_decode_char(input[0]);
-    b2 = kage_base64_decode_char(input[1]);
-    if (b1 < 0 || b2 < 0) goto end;
-
+// Decode quartet when only 3 bytes present (2 padding chars)
+static int decode_quartet_padding3(const char *input, unsigned char *output, size_t *output_pos) {
+    int b1 = kage_base64_decode_char(input[0]);
+    int b2 = kage_base64_decode_char(input[1]);
+    if (b1 < 0 || b2 < 0) return 0;
     output[(*output_pos)++] = (b1 << 2) | (b2 >> 4);
+    return 1;
+}
 
-    if (input[2] == '=') {
-        *remaining = 1;
-        result = 1;
-        goto end;
-    }
-
-    b3 = kage_base64_decode_char(input[2]);
-    if (b3 < 0) goto end;
-
+// Decode quartet when only 2 bytes present (1 padding char)
+static int decode_quartet_padding2(const char *input, unsigned char *output, size_t *output_pos) {
+    int b1 = kage_base64_decode_char(input[0]);
+    int b2 = kage_base64_decode_char(input[1]);
+    int b3 = kage_base64_decode_char(input[2]);
+    if (b1 < 0 || b2 < 0 || b3 < 0) return 0;
+    output[(*output_pos)++] = (b1 << 2) | (b2 >> 4);
     output[(*output_pos)++] = ((b2 & 0x0F) << 4) | (b3 >> 2);
+    return 1;
+}
 
-    if (input[3] == '=') {
+// Decode full quartet (no padding)
+static int decode_quartet_full(const char *input, unsigned char *output, size_t *output_pos) {
+    int b1 = kage_base64_decode_char(input[0]);
+    int b2 = kage_base64_decode_char(input[1]);
+    int b3 = kage_base64_decode_char(input[2]);
+    int b4 = kage_base64_decode_char(input[3]);
+    if (b1 < 0 || b2 < 0 || b3 < 0 || b4 < 0) return 0;
+    output[(*output_pos)++] = (b1 << 2) | (b2 >> 4);
+    output[(*output_pos)++] = ((b2 & 0x0F) << 4) | (b3 >> 2);
+    output[(*output_pos)++] = ((b3 & 0x03) << 6) | b4;
+    return 1;
+}
+
+// Helper function to decode a base64 quartet (delegates to specific handlers)
+static int kage_base64_decode_quartet(const char *input, unsigned char *output, size_t *output_pos, int *remaining) {
+    int success = 0;
+
+    if (input[2] == KAGE_BASE64_PADDING_CHAR) {
+        *remaining = 1;
+        success = decode_quartet_padding3(input, output, output_pos);
+    } else if (input[3] == KAGE_BASE64_PADDING_CHAR) {
         *remaining = 2;
-        result = 1;
-        goto end;
+        success = decode_quartet_padding2(input, output, output_pos);
+    } else {
+        *remaining = 3;
+        success = decode_quartet_full(input, output, output_pos);
     }
 
-    b4 = kage_base64_decode_char(input[3]);
-    if (b4 < 0) goto end;
-
-    output[(*output_pos)++] = ((b3 & 0x03) << 6) | b4;
-    *remaining = 3;
-    result = 1;
-
-end:
-    return result;
+    return success;
 }
 
 unsigned char* kage_base64_decode(const char *data, size_t input_length, size_t *output_length) {

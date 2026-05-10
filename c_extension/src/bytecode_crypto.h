@@ -9,10 +9,26 @@
 
 #include "kage_context.h"
 
+// Zend Engine opcode constants (Zend/zend_VM.h)
+// Common opcodes used in bytecode encryption
+#define KAGE_ZEND_ASSIGN    38  // ZEND_ASSIGN
+#define KAGE_ZEND_ECHO      40  // ZEND_ECHO
+#define KAGE_ZEND_ADD        1  // ZEND_ADD
+#define KAGE_ZEND_SUB        2  // ZEND_SUB
+#define KAGE_ZEND_MUL        3  // ZEND_MUL
+#define KAGE_ZEND_RETURN    62  // ZEND_RETURN
+#define KAGE_ZEND_NOP        0  // ZEND_NOP
+
+// Parsing constants
+#define KAGE_VLD_OPCODE_STR_MAX     256  // Maximum opcode string length from VLD
+#define KAGE_HASH_SIZE_FUNCTIONS      8  // Initial hash table size for functions
+#define KAGE_HASH_SIZE_OPCODES       64  // Initial hash table size for opcodes
+#define KAGE_FILENAME_PREFIX_LEN      9  // Length of "filename:" string
+
 // Структура Zend опкода
 typedef struct {
     int lineno;           // Номер строки
-    unsigned char opcode; // Код операции
+    unsigned char opcode; // Кód операции
     zval op1;            // Первый операнд
     zval op2;            // Второй операнд
     zval result;         // Результат
