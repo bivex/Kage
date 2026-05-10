@@ -15,6 +15,7 @@
 // Internal functions
 int kage_internal_encrypt(zval *return_value, zval *data, zend_string *key);
 int kage_internal_decrypt(zval *return_value, zval *encrypted_data, zend_string *key);
+int kage_raw_decrypt(zval *return_value, const unsigned char *data, size_t data_len, zend_string *key);
 
 /**
  * Encrypts data using libsodium's crypto_secretbox_easy

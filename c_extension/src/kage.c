@@ -12,6 +12,7 @@
 #include "kage_config.h"
 #include "bytecode_crypto.h"
 #include "crypto.h"
+#include <zend_compile.h>
 
 // Define the module globals
 ZEND_DECLARE_MODULE_GLOBALS(kage)
@@ -33,63 +34,116 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
     const char *filename = file_handle->filename;
     FILE *fp = NULL;
     char header[4];
+    zend_op_array *op_array = NULL;
+    unsigned char *encrypted_buf = NULL;
+    zend_string *key = NULL;
+    zval decrypted_zv;
+    int is_kage_file = 0;
+    int decryption_failed = 0;
+
+    ZVAL_NULL(&decrypted_zv);
 
     if (filename) {
         fp = fopen(filename, "rb");
         if (fp) {
             if (fread(header, 1, 4, fp) == 4 && memcmp(header, "KAGE", 4) == 0) {
-                // 1. Read and Decrypt
+                is_kage_file = 1;
+
+                // 1. Read encrypted payload
                 fseek(fp, 0, SEEK_END);
                 size_t file_size = ftell(fp);
                 fseek(fp, 4, SEEK_SET);
                 size_t encrypted_len = file_size - 4;
-                unsigned char *encrypted_buf = emalloc(encrypted_len);
-                fread(encrypted_buf, 1, encrypted_len, fp);
-                fclose(fp);
+                encrypted_buf = emalloc(encrypted_len);
+                if (!encrypted_buf) goto cleanup;
 
-                char *key_str = "0123456789abcdef0123456789abcdef";
-                zend_string *key = zend_string_init(key_str, 32, 0);
-                zval encrypted_zv, decrypted_zv;
-                ZVAL_NULL(&decrypted_zv);
-                ZVAL_STRINGL(&encrypted_zv, (char*)encrypted_buf, encrypted_len);
-                efree(encrypted_buf);
-
-                zend_op_array *op_array = NULL;
-                if (kage_internal_decrypt(&decrypted_zv, &encrypted_zv, key) == SUCCESS) {
-                    size_t decrypted_len = Z_STRLEN(decrypted_zv);
-                    char *decrypted_copy = estrndup(Z_STRVAL(decrypted_zv), decrypted_len);
-                    
-                    FILE *mem_fp = fmemopen(decrypted_copy, decrypted_len, "r");
-                    if (mem_fp) {
-                        // 3. Force PHP to use our stream via zend_stream_fixup
-                        if (file_handle->type == ZEND_HANDLE_FP && file_handle->handle.fp) {
-                            fclose(file_handle->handle.fp);
-                        }
-                        
-                        file_handle->type = ZEND_HANDLE_FP;
-                        file_handle->handle.fp = mem_fp;
-                        
-                        // This is the magic part for PHP 7.4
-                        // It ensures all internal buffers are updated from our fp
-                        char *dummy_buf;
-                        size_t dummy_len;
-                        if (zend_stream_fixup(file_handle, &dummy_buf, &dummy_len) == SUCCESS) {
-                            op_array = original_compile_file(file_handle, type);
-                        }
-                    }
-                    zval_ptr_dtor(&decrypted_zv);
+                if (fread(encrypted_buf, 1, encrypted_len, fp) != encrypted_len) {
+                    goto cleanup;
                 }
-                zval_ptr_dtor(&encrypted_zv);
-                zend_string_release(key);
-
-                if (op_array) return op_array;
-            } else {
                 fclose(fp);
+                fp = NULL;
+
+                // 2. Get encryption key from configuration (INI > env > fallback)
+                kage_config *config = kage_config_get();
+                const char *key_str = NULL;
+                if (config) {
+                    key_str = kage_config_get_string(config, KAGE_CONFIG_ENCRYPTION_KEY);
+                }
+                if (!key_str) {
+                    key_str = getenv("KAGE_ENCRYPTION_KEY");
+                }
+                if (!key_str) {
+                    key_str = "0123456789abcdef0123456789abcdef"; // TEMP fallback
+                }
+                key = zend_string_init(key_str, 32, 0);
+
+                // 3. Decrypt (raw binary format)
+                if (kage_raw_decrypt(&decrypted_zv, encrypted_buf, encrypted_len, key) != SUCCESS) {
+                    decryption_failed = 1;
+                    goto cleanup;
+                }
+
+                // 4. Compile the decrypted PHP code directly (strip <?php ?> tags)
+                char *src = Z_STRVAL(decrypted_zv);
+                size_t src_len = Z_STRLEN(decrypted_zv);
+                char *code_start = src;
+                size_t code_len = src_len;
+
+                // Strip opening tag
+                if (code_len >= 5 && memcmp(code_start, "<?php", 5) == 0) {
+                    code_start += 5;
+                    code_len -= 5;
+                } else if (code_len >= 2 && memcmp(code_start, "<?", 2) == 0) {
+                    code_start += 2;
+                    code_len -= 2;
+                }
+
+                // Strip closing tag
+                if (code_len >= 2 && memcmp(code_start + code_len - 2, "?>", 2) == 0) {
+                    code_len -= 2;
+                }
+
+                zval code_zv;
+                ZVAL_STRINGL(&code_zv, code_start, code_len);
+                op_array = zend_compile_string(&code_zv, filename);
+                zval_ptr_dtor(&code_zv);
+            } else {
+                // Not a Kage-protected file
+                if (fp) {
+                    fclose(fp);
+                    fp = NULL;
+                }
             }
         }
     }
 
-    return original_compile_file(file_handle, type);
+cleanup:
+    // Close file if still open
+    if (fp) {
+        fclose(fp);
+    }
+    // Destroy decrypted zval
+    if (decrypted_zv.value.str) {
+        zval_ptr_dtor(&decrypted_zv);
+    }
+    // Release key
+    if (key) {
+        zend_string_release(key);
+    }
+    // Free encrypted buffer if still allocated
+    if (encrypted_buf) {
+        efree(encrypted_buf);
+    }
+
+    if (decryption_failed) {
+        php_error_docref(NULL, E_WARNING, "Kage: Invalid license or corrupted encrypted file '%s'", filename);
+        // op_array remains NULL, compilation failed
+    } else if (!is_kage_file) {
+        // Non-protected file, delegate to original compiler
+        op_array = original_compile_file(file_handle, type);
+    }
+
+    return op_array;
 }
 
 // Module initialization

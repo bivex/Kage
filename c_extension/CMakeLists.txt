@@ -86,9 +86,19 @@ target_compile_options(${EXTENSION_NAME} PRIVATE
     -Wno-unused-parameter
 )
 
-# Link libraries
+# Link libraries and options
 target_link_libraries(${EXTENSION_NAME} PRIVATE
     ${SODIUM_LIBRARIES}
+)
+target_link_directories(${EXTENSION_NAME} PRIVATE
+    ${SODIUM_LIBRARY_DIRS}
+)
+# Allow unresolved symbols (resolved at runtime from PHP)
+target_link_options(${EXTENSION_NAME} PRIVATE
+    "-undefined" "dynamic_lookup"
+)
+target_link_directories(${EXTENSION_NAME} PRIVATE
+    ${SODIUM_LIBRARY_DIRS}
 )
 
 # Set output properties

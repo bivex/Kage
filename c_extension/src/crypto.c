@@ -281,7 +281,7 @@ int kage_internal_encrypt(zval *return_value, zval *data, zend_string *key) {
     return SUCCESS;
 }
 
-// Internal decryption function - improved with error handling
+// Internal decryption function - base64 decode then decrypt
 int kage_internal_decrypt(zval *return_value, zval *encrypted_data, zend_string *key) {
     // Convert encrypted data to string if needed
     if (Z_TYPE_P(encrypted_data) != IS_STRING) {
@@ -303,7 +303,7 @@ int kage_internal_decrypt(zval *return_value, zval *encrypted_data, zend_string 
         return FAILURE;
     }
 
-    // Check minimum length
+    // Minimum length check
     if (decoded_len < crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES) {
         efree(decoded);
         zend_error(E_WARNING, "Kage: Invalid encrypted data length");
@@ -315,16 +315,16 @@ int kage_internal_decrypt(zval *return_value, zval *encrypted_data, zend_string 
     unsigned char *ciphertext = decoded + crypto_secretbox_NONCEBYTES;
     size_t ciphertext_len = decoded_len - crypto_secretbox_NONCEBYTES;
 
-    // Prepare plaintext
+    // Prepare plaintext buffer
     unsigned char *plaintext = emalloc(ciphertext_len - crypto_secretbox_MACBYTES);
-    if (plaintext == NULL) {
+    if (!plaintext) {
         efree(decoded);
         zend_error(E_WARNING, "Kage: Memory allocation failed");
         return FAILURE;
     }
 
     // Decrypt
-    if (crypto_secretbox_open_easy(plaintext, ciphertext, ciphertext_len, nonce, (unsigned char *)ZSTR_VAL(key)) != 0) {
+    if (crypto_secretbox_open_easy(plaintext, ciphertext, ciphertext_len, nonce, (unsigned char*)ZSTR_VAL(key)) != 0) {
         efree(plaintext);
         efree(decoded);
         zend_error(E_WARNING, "Kage: Decryption failed");
@@ -336,7 +336,44 @@ int kage_internal_decrypt(zval *return_value, zval *encrypted_data, zend_string 
 
     efree(plaintext);
     efree(decoded);
+    return SUCCESS;
+}
 
+// Raw decryption for binary data (nonce + ciphertext, already decoded)
+int kage_raw_decrypt(zval *return_value, const unsigned char *data, size_t data_len, zend_string *key) {
+    if (!data || data_len == 0) {
+        zend_error(E_WARNING, "Kage: Invalid input for raw decryption");
+        return FAILURE;
+    }
+
+    if (ZSTR_LEN(key) != crypto_secretbox_KEYBYTES) {
+        zend_error(E_WARNING, "Kage: Invalid decryption key length");
+        return FAILURE;
+    }
+
+    if (data_len < crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES) {
+        zend_error(E_WARNING, "Kage: Data too short for raw decryption");
+        return FAILURE;
+    }
+
+    const unsigned char *nonce = data;
+    const unsigned char *ciphertext = data + crypto_secretbox_NONCEBYTES;
+    size_t ciphertext_len = data_len - crypto_secretbox_NONCEBYTES;
+
+    unsigned char *plaintext = emalloc(ciphertext_len - crypto_secretbox_MACBYTES);
+    if (!plaintext) {
+        zend_error(E_WARNING, "Kage: Memory allocation failed");
+        return FAILURE;
+    }
+
+    if (crypto_secretbox_open_easy(plaintext, ciphertext, ciphertext_len, nonce, (unsigned char*)ZSTR_VAL(key)) != 0) {
+        efree(plaintext);
+        zend_error(E_WARNING, "Kage: Decryption failed");
+        return FAILURE;
+    }
+
+    ZVAL_STRINGL(return_value, (char *)plaintext, ciphertext_len - crypto_secretbox_MACBYTES);
+    efree(plaintext);
     return SUCCESS;
 }
 

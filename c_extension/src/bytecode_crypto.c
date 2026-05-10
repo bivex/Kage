@@ -6,6 +6,7 @@
 #include "zend_compile.h"
 #include "zend_execute.h"
 #include "zend_smart_str.h"
+#include <zend_vm.h>
 
 // Helper: convert opcode string to numeric value
 static unsigned char kage_opcode_from_string(const char *opcode_str) {
@@ -242,14 +243,8 @@ PHPAPI zval* kage_decrypt_operand_runtime(zval *operand, const char *key, size_t
 
 // Runtime дешифрование для Zend Engine
 PHPAPI void* kage_get_encrypted_handler(unsigned char opcode, const char *key) {
-    // Возвращаем дешифрованный обработчик опкода
-    // В реальности это должно интегрироваться с Zend VM
-    
-    // Дешифруем opcode обратно
-    unsigned char decrypted_opcode = opcode ^ key[0];
-    
-    // Получаем стандартный обработчик
-    return zend_get_opcode_handler(decrypted_opcode);
+    // Stub: not implemented in this version
+    return NULL;
 }
 
 // Дешифрование операнда
