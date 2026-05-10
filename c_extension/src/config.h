@@ -32,6 +32,7 @@ PHP_FUNCTION(kage_decrypt_c);
 // Module globals structure
 ZEND_BEGIN_MODULE_GLOBALS(kage)
     zend_bool debug;
+    zend_bool restrict_unencoded;
 ZEND_END_MODULE_GLOBALS(kage)
 
 // Declare the globals as extern

@@ -19,6 +19,7 @@ ZEND_DECLARE_MODULE_GLOBALS(kage)
 // INI entries
 PHP_INI_BEGIN()
     STD_PHP_INI_ENTRY("kage.debug", "0", PHP_INI_ALL, OnUpdateBool, debug, zend_kage_globals, kage_globals)
+    STD_PHP_INI_ENTRY("kage.restrict_unencoded", "0", PHP_INI_ALL, OnUpdateBool, restrict_unencoded, zend_kage_globals, kage_globals)
 PHP_INI_END()
 
 // Register AST resource type
@@ -31,6 +32,7 @@ PHP_GINIT_FUNCTION(kage)
     ZEND_TSRMLS_CACHE_UPDATE();
 #endif
     kage_globals->debug = 0;
+    kage_globals->restrict_unencoded = 0;
 }
 
 // AST resource destructor
@@ -44,6 +46,17 @@ static void kage_ast_dtor(zend_resource *res) {
 PHP_MINIT_FUNCTION(kage)
 {
     REGISTER_INI_ENTRIES();
+
+    // Phase 1: Environment Hardening
+    // Detect hostile extensions that can be used for reverse engineering
+    const char *hostile_exts[] = {"vld", "xdebug", "blackfire", NULL};
+    for (int i = 0; hostile_exts[i] != NULL; i++) {
+        if (zend_hash_str_exists(&module_registry, hostile_exts[i], strlen(hostile_exts[i]))) {
+            // Using E_CORE_ERROR during MINIT to stop PHP entirely if hostile extensions are present
+            zend_error(E_CORE_ERROR, "Kage Security: Hostile extension '%s' detected. Execution terminated for safety.", hostile_exts[i]);
+            return FAILURE;
+        }
+    }
 
     // Initialize libsodium
     if (sodium_init() == -1) {
