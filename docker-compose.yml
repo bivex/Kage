@@ -1,0 +1,7 @@
+services:
+  kage-test:
+    build: .
+    volumes:
+      - .:/app
+    environment:
+      - KAGE_LOG_LEVEL=DEBUG

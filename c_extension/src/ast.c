@@ -404,7 +404,6 @@ static kage_ast_node* parse_expression(kage_ast_parser *parser, kage_scope *scop
 PHPAPI kage_ast_node* kage_ast_parse(const char *source) {
     kage_ast_node *result = NULL;
     kage_scope *scope = NULL;
-    kage_ast_node *program = NULL;
     kage_ast_node *current = NULL;
     bool found_expression = false;
     kage_ast_parser parser = {0};

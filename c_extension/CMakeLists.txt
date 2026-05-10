@@ -23,14 +23,6 @@ if (NOT DEFINED PHP_INI_DIR)
     )
 endif()
 
-if (NOT DEFINED PHP_API_VERSION)
-    execute_process(
-        COMMAND php-config --phpapi
-        OUTPUT_VARIABLE PHP_API_VERSION
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-endif()
-
 # PHP include directory (always derived from php-config)
 execute_process(
     COMMAND php-config --include-dir
@@ -84,7 +76,6 @@ target_compile_definitions(${EXTENSION_NAME} PRIVATE
     COMPILE_DL_KAGE
     ZEND_ENABLE_STATIC_TSRMLS_CACHE=1
     PHP_EXTENSION
-    ZEND_MODULE_API_NO=${PHP_API_VERSION}
     HAVE_CONFIG_H
 )
 

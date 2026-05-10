@@ -1,0 +1,8 @@
+c_extension/build/
+c_extension/artifacts/
+artifacts/
+logs/*.log
+.git
+.gitignore
+node_modules
+.DS_Store

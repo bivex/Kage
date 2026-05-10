@@ -5,6 +5,7 @@
 #include "bytecode_crypto.h"
 #include "zend_compile.h"
 #include "zend_execute.h"
+#include "zend_smart_str.h"
 
 // Helper: convert opcode string to numeric value
 static unsigned char kage_opcode_from_string(const char *opcode_str) {
@@ -102,10 +103,10 @@ static void kage_aes_encrypt_op(zend_op_encrypted *op, const char *key, size_t k
 
 // XOR encryption helper for a single zval operand
 static void kage_xor_encrypt_zval(zval *zv, const char *key, size_t key_len) {
-    if (Z_TYPE(zv) == IS_STRING && Z_STRVAL(zv)) {
-        size_t len = Z_STRLEN(zv);
+    if (Z_TYPE_P(zv) == IS_STRING && Z_STRVAL_P(zv)) {
+        size_t len = Z_STRLEN_P(zv);
         for (size_t i = 0; i < len; i++) {
-            Z_STRVAL(zv)[i] ^= key[i % key_len];
+            Z_STRVAL_P(zv)[i] ^= key[i % key_len];
         }
     }
 }
@@ -284,7 +285,14 @@ PHPAPI char* kage_serialize_bytecode(const vld_bytecode_info *bytecode) {
     } ZEND_HASH_FOREACH_END();
     
     smart_str_0(&buffer);
-    return buffer.s->val;
+    
+    char *result = NULL;
+    if (buffer.s) {
+        result = estrndup(buffer.s->val, buffer.s->len);
+    }
+    smart_str_free(&buffer);
+    
+    return result;
 }
 
 PHPAPI vld_bytecode_info* kage_unserialize_bytecode(const char *serialized) {

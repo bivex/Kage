@@ -21,9 +21,26 @@ static vld_bytecode_info* kage_extract_bytecode_from_php(const char *php_code, s
         return NULL;
     }
 
+    const char *final_code = php_code;
+    size_t final_len = code_len;
+
+    // Skip <?php tag if present
+    if (code_len >= 5 && strncmp(php_code, "<?php", 5) == 0) {
+        final_code += 5;
+        final_len -= 5;
+    } else if (code_len >= 2 && strncmp(php_code, "<?", 2) == 0) {
+        final_code += 2;
+        final_len -= 2;
+    }
+
+    // Skip ?> tag if present at the end
+    if (final_len >= 2 && strncmp(final_code + final_len - 2, "?>", 2) == 0) {
+        final_len -= 2;
+    }
+
     // Compile PHP code to get op_array
     zval code_zv;
-    ZVAL_STRINGL(&code_zv, php_code, code_len);
+    ZVAL_STRINGL(&code_zv, final_code, final_len);
 
     zend_op_array *op_array = zend_compile_string(&code_zv, "kage_compiled");
     if (!op_array) {
@@ -57,10 +74,16 @@ static vld_bytecode_info* kage_extract_bytecode_from_php(const char *php_code, s
             op->opcode = op_array->opcodes[i].opcode;
             op->handler = NULL;
 
-            // Copy operands (simplified)
-            ZVAL_COPY(&op->op1, &op_array->opcodes[i].op1);
-            ZVAL_COPY(&op->op2, &op_array->opcodes[i].op2);
-            ZVAL_COPY(&op->result, &op_array->opcodes[i].result);
+            // Copy operands (safe way for PHP 7)
+            if (op_array->opcodes[i].op1_type == IS_CONST) {
+                ZVAL_COPY(&op->op1, RT_CONSTANT(&op_array->opcodes[i], op_array->opcodes[i].op1));
+            }
+            if (op_array->opcodes[i].op2_type == IS_CONST) {
+                ZVAL_COPY(&op->op2, RT_CONSTANT(&op_array->opcodes[i], op_array->opcodes[i].op2));
+            }
+            if (op_array->opcodes[i].result_type == IS_CONST) {
+                ZVAL_COPY(&op->result, RT_CONSTANT(&op_array->opcodes[i], op_array->opcodes[i].result));
+            }
 
             // Add to opcodes hashtable
             zend_hash_index_add_ptr(bytecode->opcodes, i, op);
@@ -93,7 +116,7 @@ static php_bytecode_package* kage_create_php_package(const char *php_code, size_
 }
 
 // Function to serialize PHP package
-static char* kage_serialize_php_package(php_bytecode_package *package) {
+static char* kage_serialize_php_package(php_bytecode_package *package, size_t *out_len) {
     if (!package) return NULL;
 
     smart_str result = {0};
@@ -118,7 +141,11 @@ static char* kage_serialize_php_package(php_bytecode_package *package) {
 
     smart_str_0(&result);
 
-    char *serialized = estrndup(result.s->val, result.s->len);
+    *out_len = result.s->len;
+    char *serialized = emalloc(*out_len + 1);
+    memcpy(serialized, result.s->val, *out_len);
+    serialized[*out_len] = '\0';
+    
     smart_str_free(&result);
 
     return serialized;
@@ -126,7 +153,13 @@ static char* kage_serialize_php_package(php_bytecode_package *package) {
 
 // Function to unserialize PHP package
 static php_bytecode_package* kage_unserialize_php_package(const char *serialized) {
-    if (!serialized || serialized[0] != 'P') return NULL;
+    if (!serialized) {
+        return NULL;
+    }
+    
+    if (serialized[0] != 'P') {
+        return NULL;
+    }
 
     php_bytecode_package *package = emalloc(sizeof(php_bytecode_package));
     memset(package, 0, sizeof(php_bytecode_package));
@@ -351,7 +384,8 @@ PHP_FUNCTION(kage_encrypt_c) {
     }
 
     // Serialize the complete package
-    char *serialized = kage_serialize_php_package(package);
+    size_t serialized_len;
+    char *serialized = kage_serialize_php_package(package, &serialized_len);
     if (!serialized) {
         kage_free_php_package(package);
         zend_error(E_WARNING, "Kage: Failed to serialize PHP package");
@@ -363,7 +397,7 @@ PHP_FUNCTION(kage_encrypt_c) {
 
     // Return base64 encoded result for easier handling
     size_t encoded_len;
-    char *encoded = kage_base64_encode((unsigned char*)serialized, strlen(serialized), &encoded_len);
+    char *encoded = kage_base64_encode((unsigned char*)serialized, serialized_len, &encoded_len);
     efree(serialized);
 
     if (!encoded) {

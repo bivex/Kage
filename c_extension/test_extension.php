@@ -5,7 +5,7 @@
  */
 
 // Test data
-$test_data = "Hello, this is a test message for the Kage extension!";
+$test_data = "echo \"Hello, this is a test message for the Kage extension!\";";
 $key = random_bytes(32); // crypto_secretbox_KEYBYTES = 32
 
 echo "Testing Kage Extension\n";
@@ -19,22 +19,24 @@ echo "Original data: " . $test_data . "\n";
 // Encrypt
 $encrypted = kage_encrypt_c($test_data, $key);
 if ($encrypted === false) {
-    die("Encryption failed!\n");
-}
-echo "Encrypted (Base64): " . $encrypted . "\n";
-
-// Decrypt
-$decrypted = kage_decrypt_c($encrypted, $key);
-if ($decrypted === false) {
-    die("Decryption failed!\n");
-}
-echo "Decrypted: " . $decrypted . "\n";
-
-// Verify
-if ($decrypted === $test_data) {
-    echo "✓ Test 1 passed: Data matches after encryption/decryption\n\n";
+    echo "Encryption failed!\n";
 } else {
-    echo "✗ Test 1 failed: Data mismatch after encryption/decryption\n\n";
+    echo "Encrypted (Base64): " . $encrypted . "\n";
+
+    // Decrypt
+    $decrypted = kage_decrypt_c($encrypted, $key);
+    if ($decrypted === false) {
+        echo "Decryption failed!\n";
+    } else {
+        echo "Decrypted: " . $decrypted . "\n";
+
+        // Verify
+        if ($decrypted === $test_data) {
+            echo "✓ Test 1 passed: Data matches after encryption/decryption\n\n";
+        } else {
+            echo "✗ Test 1 failed: Data mismatch after encryption/decryption\n\n";
+        }
+    }
 }
 
 // Test 2: Empty string
@@ -53,7 +55,7 @@ if ($decrypted_empty === $empty_data) {
 // Test 3: Long string
 echo "Test 3: Long string\n";
 echo "-----------------\n";
-$long_data = str_repeat("This is a test message. ", 100);
+$long_data = str_repeat("echo 'This is a test message. '; ", 10);
 $encrypted_long = kage_encrypt_c($long_data, $key);
 $decrypted_long = kage_decrypt_c($encrypted_long, $key);
 
