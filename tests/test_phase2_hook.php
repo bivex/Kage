@@ -3,7 +3,10 @@
  * Comprehensive Test Suite for Phase 2: Transparent Compiler Hook
  */
 
-$key = "0123456789abcdef0123456789abcdef"; // Current hardcoded key in hook
+$key = "0123456789abcdef0123456789abcdef"; // Must match extension config
+
+// Ensure extension has access to the key
+putenv("KAGE_ENCRYPTION_KEY=" . $key);
 
 echo "=== KAGE PHASE 2: COMPILER HOOK TEST SUITE ===\n\n";
 

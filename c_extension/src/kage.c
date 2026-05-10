@@ -73,7 +73,9 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
                     key_str = getenv("KAGE_ENCRYPTION_KEY");
                 }
                 if (!key_str) {
-                    key_str = "0123456789abcdef0123456789abcdef"; // TEMP fallback
+                    php_error_docref(NULL, E_WARNING, "Kage: Encryption key not configured. Set 'kage.encryption_key' in php.ini or KAGE_ENCRYPTION_KEY environment variable");
+                    decryption_failed = 1;
+                    goto cleanup;
                 }
                 key = zend_string_init(key_str, 32, 0);
 
