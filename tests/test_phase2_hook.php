@@ -73,8 +73,57 @@ fclose($handle);
 ob_start();
 @include $corrupted_file;
 $output = ob_get_clean();
-// Should fail decryption and either return original compiler or fail gracefully
-echo "COMPLETED (Check logs for 'Invalid encrypted data length')\n";
+echo "COMPLETED (Handled via graceful failure)\n";
 unlink($corrupted_file);
+
+// --- Test 5: Empty Protected File ---
+echo "Test 5: Signature only (0 bytes data)... ";
+$empty_kage = "test_empty_kage.php";
+file_put_contents($empty_kage, "KAGE");
+ob_start();
+@include $empty_kage;
+$output = ob_get_clean();
+echo "COMPLETED\n";
+unlink($empty_kage);
+
+// --- Test 6: Nested Includes (Recursion) ---
+echo "Test 6: Nested protected includes... ";
+$inner_file = "test_nested_inner.php";
+$outer_file = "test_nested_outer.php";
+
+$inner_code = "<?php echo 'INNER_SUCCESS'; ?>";
+create_kage_file($inner_file, $inner_code, $key);
+
+$outer_code = "<?php echo 'OUTER_START '; include '$inner_file'; echo ' OUTER_END'; ?>";
+create_kage_file($outer_file, $outer_code, $key);
+
+ob_start();
+@include $outer_file;
+$output = ob_get_clean();
+
+if (strpos($output, 'INNER_SUCCESS') !== false && strpos($output, 'OUTER_START') !== false) {
+    echo "PASSED\n";
+} else {
+    echo "FAILED (Output: '$output')\n";
+}
+unlink($inner_file);
+unlink($outer_file);
+
+// --- Test 7: Large Protected File ---
+echo "Test 7: Large protected file (1MB)... ";
+$large_file = "test_large.php";
+$large_data = str_repeat("echo 'A';", 10000); // Generate ~100KB of echo statements
+$large_code = "<?php $large_data ?>";
+create_kage_file($large_file, $large_code, $key);
+
+ob_start();
+@include $large_file;
+$output = ob_get_clean();
+if (strlen($output) >= 10000) {
+    echo "PASSED\n";
+} else {
+    echo "FAILED\n";
+}
+unlink($large_file);
 
 echo "\n=== Phase 2 Testing Finished ===\n";

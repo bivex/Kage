@@ -34,53 +34,58 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
     FILE *fp = NULL;
     char header[4];
 
-    // Phase 2: Seamless Integration
     if (filename) {
         fp = fopen(filename, "rb");
         if (fp) {
             if (fread(header, 1, 4, fp) == 4 && memcmp(header, "KAGE", 4) == 0) {
-                // It's a Kage file!
+                // 1. Read and Decrypt
                 fseek(fp, 0, SEEK_END);
                 size_t file_size = ftell(fp);
-                fseek(fp, 4, SEEK_SET); // Skip 'KAGE'
-
+                fseek(fp, 4, SEEK_SET);
                 size_t encrypted_len = file_size - 4;
                 unsigned char *encrypted_buf = emalloc(encrypted_len);
                 fread(encrypted_buf, 1, encrypted_len, fp);
                 fclose(fp);
-                fp = NULL;
 
-                // kage_internal_decrypt expects Base64 encoded string in encrypted_zv
-                size_t b64_len;
-                char *b64_data = kage_base64_encode(encrypted_buf, encrypted_len, &b64_len);
-                efree(encrypted_buf);
-
-                // Decrypt
                 char *key_str = "0123456789abcdef0123456789abcdef";
                 zend_string *key = zend_string_init(key_str, 32, 0);
-                
                 zval encrypted_zv, decrypted_zv;
-                ZVAL_NULL(&encrypted_zv);
                 ZVAL_NULL(&decrypted_zv);
-                
-                ZVAL_STRINGL(&encrypted_zv, b64_data, b64_len);
-                efree(b64_data); // Data is copied by ZVAL_STRINGL
+                ZVAL_STRINGL(&encrypted_zv, (char*)encrypted_buf, encrypted_len);
+                efree(encrypted_buf);
 
                 zend_op_array *op_array = NULL;
                 if (kage_internal_decrypt(&decrypted_zv, &encrypted_zv, key) == SUCCESS) {
-                    // Compile decrypted PHP code
-                    op_array = zend_compile_string(&decrypted_zv, (char*)filename);
-                    // Do NOT dtor decrypted_zv here, let it live with the op_array
+                    size_t decrypted_len = Z_STRLEN(decrypted_zv);
+                    char *decrypted_copy = estrndup(Z_STRVAL(decrypted_zv), decrypted_len);
+                    
+                    FILE *mem_fp = fmemopen(decrypted_copy, decrypted_len, "r");
+                    if (mem_fp) {
+                        // 3. Force PHP to use our stream via zend_stream_fixup
+                        if (file_handle->type == ZEND_HANDLE_FP && file_handle->handle.fp) {
+                            fclose(file_handle->handle.fp);
+                        }
+                        
+                        file_handle->type = ZEND_HANDLE_FP;
+                        file_handle->handle.fp = mem_fp;
+                        
+                        // This is the magic part for PHP 7.4
+                        // It ensures all internal buffers are updated from our fp
+                        char *dummy_buf;
+                        size_t dummy_len;
+                        if (zend_stream_fixup(file_handle, &dummy_buf, &dummy_len) == SUCCESS) {
+                            op_array = original_compile_file(file_handle, type);
+                        }
+                    }
+                    zval_ptr_dtor(&decrypted_zv);
                 }
-
                 zval_ptr_dtor(&encrypted_zv);
                 zend_string_release(key);
 
-                if (op_array) {
-                    return op_array;
-                }
+                if (op_array) return op_array;
+            } else {
+                fclose(fp);
             }
-            if (fp) fclose(fp);
         }
     }
 
