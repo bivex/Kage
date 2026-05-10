@@ -12,6 +12,7 @@
 #include "kage_config.h"
 #include "bytecode_crypto.h"
 #include "crypto.h"
+#include "kage_opcode_map.h"
 #include <zend_compile.h>
 
 // Define the module globals
@@ -115,6 +116,10 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
                  op_array = zend_compile_string(code_str, filename);
                  zend_string_release(code_str);
  #endif
+                 // Phase 3.1: Apply virtual opcode mapping to transform bytecode
+                 if (op_array) {
+                     kage_map_oparray(op_array);
+                 }
              } else {
                 // Not a Kage-protected file
                 if (fp) {
@@ -217,36 +222,45 @@ PHP_MINIT_FUNCTION(kage)
         kage_ast_dtor, NULL, "Kage AST", module_number
     );
 
-    // Register constants
-    REGISTER_STRING_CONSTANT("KAGE_VERSION", PHP_KAGE_VERSION, CONST_CS | CONST_PERSISTENT);
+     // Register constants
+     REGISTER_STRING_CONSTANT("KAGE_VERSION", PHP_KAGE_VERSION, CONST_CS | CONST_PERSISTENT);
 
-    // Phase 2: Register compiler hook
+     // Phase 3.1: Initialize opcode mapping
+     if (kage_opcode_map_init() != SUCCESS) {
+         zend_error(E_WARNING, "Kage: Opcode map initialization failed");
+         return FAILURE;
+     }
+
+     // Phase 2: Register compiler hook
     original_compile_file = zend_compile_file;
     zend_compile_file = kage_compile_file;
 
     return SUCCESS;
 }
 
-PHP_MSHUTDOWN_FUNCTION(kage)
-{
-    // Restore original compiler hook
-    zend_compile_file = original_compile_file;
+ PHP_MSHUTDOWN_FUNCTION(kage)
+ {
+     // Restore original compiler hook
+     zend_compile_file = original_compile_file;
 
-    // Clean up context system
-    kage_context *ctx = kage_get_context();
-    if (ctx) {
-        kage_context_destroy(ctx);
-    }
+     // Clean up context system
+     kage_context *ctx = kage_get_context();
+     if (ctx) {
+         kage_context_destroy(ctx);
+     }
 
-    // Clean up configuration system
-    kage_config *config = kage_config_get();
-    if (config) {
-        kage_config_destroy(config);
-    }
+     // Clean up configuration system
+     kage_config *config = kage_config_get();
+     if (config) {
+         kage_config_destroy(config);
+     }
 
-    UNREGISTER_INI_ENTRIES();
-    return SUCCESS;
-}
+     // Phase 3.1: Cleanup opcode mapping
+     kage_opcode_map_shutdown();
+
+     UNREGISTER_INI_ENTRIES();
+     return SUCCESS;
+ }
 
 PHP_RINIT_FUNCTION(kage)
 {

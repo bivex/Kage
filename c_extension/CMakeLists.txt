@@ -65,8 +65,7 @@ set(SOURCES
     src/base64.c
     src/vm.c
     src/ast.c
-    # Phase 3: opcode mapping (placeholder)
-    # src/kage_opcode_map.c
+    src/kage_opcode_map.c  # Phase 3.1: virtual opcode mapping
 )
 
 # --- PHP Extension Target ---
