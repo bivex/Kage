@@ -342,136 +342,28 @@ int kage_internal_decrypt(zval *return_value, zval *encrypted_data, zend_string 
 
 // PHP Function: Encrypt
 PHP_FUNCTION(kage_encrypt_c) {
-    zend_string *php_code;
+    zval *php_code_zv;
     zend_string *key;
 
-    if (zend_parse_parameters(ZEND_NUM_ARGS(), "SS", &php_code, &key) == FAILURE) {
+    if (zend_parse_parameters(ZEND_NUM_ARGS(), "zS", &php_code_zv, &key) == FAILURE) {
         RETURN_FALSE;
     }
 
-    // Validate inputs
-    if (ZSTR_LEN(php_code) == 0) {
-        zend_error(E_WARNING, "Kage: PHP code cannot be empty");
+    if (kage_internal_encrypt(return_value, php_code_zv, key) != SUCCESS) {
         RETURN_FALSE;
     }
-
-    if (ZSTR_LEN(key) != 32) {
-        zend_error(E_WARNING, "Kage: Invalid encryption key length (must be 32 bytes)");
-        RETURN_FALSE;
-    }
-
-    // Create PHP package with original code and encrypted bytecode
-    php_bytecode_package *package = kage_create_php_package(ZSTR_VAL(php_code), ZSTR_LEN(php_code));
-    if (!package || !package->encrypted_bytecode) {
-        if (package) kage_free_php_package(package);
-        zend_error(E_WARNING, "Kage: Failed to create PHP bytecode package");
-        RETURN_FALSE;
-    }
-
-    // Create encryption config
-    kage_bytecode_crypto_config crypto_config = {0};
-    crypto_config.algorithm = KAGE_OPCODE_ENCRYPT_XOR; // Default algorithm
-    crypto_config.key = ZSTR_VAL(key);
-    crypto_config.key_length = ZSTR_LEN(key);
-    crypto_config.selective_encryption = 0; // Encrypt all opcodes
-
-    // Encrypt opcodes
-    kage_result_t encrypt_result = kage_encrypt_opcodes(package->encrypted_bytecode, &crypto_config);
-    if (encrypt_result.error != KAGE_SUCCESS) {
-        kage_free_php_package(package);
-        zend_error(E_WARNING, "Kage: Failed to encrypt bytecode");
-        RETURN_FALSE;
-    }
-
-    // Serialize the complete package
-    size_t serialized_len;
-    char *serialized = kage_serialize_php_package(package, &serialized_len);
-    if (!serialized) {
-        kage_free_php_package(package);
-        zend_error(E_WARNING, "Kage: Failed to serialize PHP package");
-        RETURN_FALSE;
-    }
-
-    // Clean up
-    kage_free_php_package(package);
-
-    // Return base64 encoded result for easier handling
-    size_t encoded_len;
-    char *encoded = kage_base64_encode((unsigned char*)serialized, serialized_len, &encoded_len);
-    efree(serialized);
-
-    if (!encoded) {
-        zend_error(E_WARNING, "Kage: Failed to encode result");
-        RETURN_FALSE;
-    }
-
-    RETVAL_STRINGL(encoded, encoded_len);
-    efree(encoded);
 }
 
 // PHP Function: Decrypt
 PHP_FUNCTION(kage_decrypt_c) {
-    zend_string *encrypted_data;
+    zval *encrypted_data_zv;
     zend_string *key;
 
-    if (zend_parse_parameters(ZEND_NUM_ARGS(), "SS", &encrypted_data, &key) == FAILURE) {
+    if (zend_parse_parameters(ZEND_NUM_ARGS(), "zS", &encrypted_data_zv, &key) == FAILURE) {
         RETURN_FALSE;
     }
 
-    // Validate inputs
-    if (ZSTR_LEN(encrypted_data) == 0) {
-        zend_error(E_WARNING, "Kage: Encrypted data cannot be empty");
+    if (kage_internal_decrypt(return_value, encrypted_data_zv, key) != SUCCESS) {
         RETURN_FALSE;
     }
-
-    if (ZSTR_LEN(key) != 32) {
-        zend_error(E_WARNING, "Kage: Invalid decryption key length (must be 32 bytes)");
-        RETURN_FALSE;
-    }
-
-    // Decode from base64 first
-    size_t decoded_len;
-    unsigned char *decoded = kage_base64_decode(ZSTR_VAL(encrypted_data), ZSTR_LEN(encrypted_data), &decoded_len);
-    if (!decoded) {
-        zend_error(E_WARNING, "Kage: Failed to decode encrypted data");
-        RETURN_FALSE;
-    }
-
-    // Unserialize PHP package
-    php_bytecode_package *package = kage_unserialize_php_package((char*)decoded);
-    efree(decoded);
-
-    if (!package) {
-        zend_error(E_WARNING, "Kage: Failed to unserialize PHP package");
-        RETURN_FALSE;
-    }
-
-    // Create decryption config (same as encryption)
-    kage_bytecode_crypto_config crypto_config = {0};
-    crypto_config.algorithm = KAGE_OPCODE_ENCRYPT_XOR; // Same algorithm as encryption
-    crypto_config.key = ZSTR_VAL(key);
-    crypto_config.key_length = ZSTR_LEN(key);
-    crypto_config.selective_encryption = 0; // Decrypt all opcodes
-
-    // Decrypt opcodes
-    kage_result_t decrypt_result = kage_decrypt_opcodes(package->encrypted_bytecode, &crypto_config);
-    if (decrypt_result.error != KAGE_SUCCESS) {
-        kage_free_php_package(package);
-        zend_error(E_WARNING, "Kage: Failed to decrypt bytecode");
-        RETURN_FALSE;
-    }
-
-    // Reconstruct PHP code from decrypted bytecode (returns original code)
-    char *php_code = kage_reconstruct_php_from_bytecode(package);
-
-    // Clean up
-    kage_free_php_package(package);
-
-    if (!php_code) {
-        zend_error(E_WARNING, "Kage: Failed to reconstruct PHP code from bytecode");
-        RETURN_FALSE;
-    }
-
-    RETVAL_STRING(php_code);
-    efree(php_code);
 }
