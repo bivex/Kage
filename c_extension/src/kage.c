@@ -213,11 +213,11 @@ PHP_MINIT_FUNCTION(kage)
         return FAILURE;
     }
 
-    // Load configuration from environment and PHP ini
-    kage_config_load_from_env(config);
-    kage_config_load_from_php_ini(config);
+     // Load configuration from environment and PHP ini
+     kage_config_load_from_env(config);
+     kage_config_load_from_php_ini(config);
 
-    // Register AST resource type
+     // Register AST resource type
     le_kage_ast = zend_register_list_destructors_ex(
         kage_ast_dtor, NULL, "Kage AST", module_number
     );
