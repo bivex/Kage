@@ -14,10 +14,10 @@ This document outlines the steps required to modernize the Kage extension, trans
 ## Phase 2: Seamless Integration (Transparent Execution)
 *Goal: Remove the need for `eval()` and make the protection invisible to the end-user.*
 
-- [ ] **Hook `zend_compile_file`**: Intercept the standard PHP compiler.
+- [x] **Hook `zend_compile_file`**: Intercept the standard PHP compiler.
     - If the file contains a Kage signature, decrypt it in memory and return the `op_array`.
     - If not, delegate to the original compiler.
-- [ ] **In-Memory Decryption**: Ensure the source code never appears as temporary files or strings. Decryption should occur directly into structures compatible with the Zend VM.
+- [x] **In-Memory Decryption**: Ensure the source code never appears as temporary files or strings. Decryption should occur directly into structures compatible with the Zend VM.
 
 ## Phase 3: Bytecode Transformation & Obfuscation
 *Goal: Ensure that even if the protection is bypassed, the opcode dump remains unreadable.*

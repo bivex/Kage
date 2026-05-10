@@ -1,0 +1,11 @@
+# Используем наш основной образ как базу
+FROM kage-kage-test:latest
+
+# Устанавливаем VLD (инструмент для дампа байткода)
+RUN pecl install vld-0.17.1 && docker-php-ext-enable vld
+
+# Попытка запустить проверку. 
+# Мы ожидаем, что Kage обнаружит VLD и заблокирует запуск.
+CMD echo "--- 🛡️ Testing Hostile Extension Detection (VLD) ---" && \
+    php -m | grep vld && \
+    php -r "echo 'If you see this, protection FAILED!';"

@@ -25,6 +25,68 @@ PHP_INI_END()
 // Register AST resource type
 int le_kage_ast;
 
+// Original zend_compile_file pointer
+static zend_op_array *(*original_compile_file)(zend_file_handle *file_handle, int type);
+
+// Hook for zend_compile_file
+static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type) {
+    const char *filename = file_handle->filename;
+    FILE *fp = NULL;
+    char header[4];
+
+    // Phase 2: Seamless Integration
+    if (filename) {
+        fp = fopen(filename, "rb");
+        if (fp) {
+            if (fread(header, 1, 4, fp) == 4 && memcmp(header, "KAGE", 4) == 0) {
+                // It's a Kage file!
+                fseek(fp, 0, SEEK_END);
+                size_t file_size = ftell(fp);
+                fseek(fp, 4, SEEK_SET); // Skip 'KAGE'
+
+                size_t encrypted_len = file_size - 4;
+                unsigned char *encrypted_buf = emalloc(encrypted_len);
+                fread(encrypted_buf, 1, encrypted_len, fp);
+                fclose(fp);
+                fp = NULL;
+
+                // kage_internal_decrypt expects Base64 encoded string in encrypted_zv
+                size_t b64_len;
+                char *b64_data = kage_base64_encode(encrypted_buf, encrypted_len, &b64_len);
+                efree(encrypted_buf);
+
+                // Decrypt
+                char *key_str = "0123456789abcdef0123456789abcdef";
+                zend_string *key = zend_string_init(key_str, 32, 0);
+                
+                zval encrypted_zv, decrypted_zv;
+                ZVAL_NULL(&encrypted_zv);
+                ZVAL_NULL(&decrypted_zv);
+                
+                ZVAL_STRINGL(&encrypted_zv, b64_data, b64_len);
+                efree(b64_data); // Data is copied by ZVAL_STRINGL
+
+                zend_op_array *op_array = NULL;
+                if (kage_internal_decrypt(&decrypted_zv, &encrypted_zv, key) == SUCCESS) {
+                    // Compile decrypted PHP code
+                    op_array = zend_compile_string(&decrypted_zv, (char*)filename);
+                    // Do NOT dtor decrypted_zv here, let it live with the op_array
+                }
+
+                zval_ptr_dtor(&encrypted_zv);
+                zend_string_release(key);
+
+                if (op_array) {
+                    return op_array;
+                }
+            }
+            if (fp) fclose(fp);
+        }
+    }
+
+    return original_compile_file(file_handle, type);
+}
+
 // Module initialization
 PHP_GINIT_FUNCTION(kage)
 {
@@ -52,9 +114,10 @@ PHP_MINIT_FUNCTION(kage)
     const char *hostile_exts[] = {"vld", "xdebug", "blackfire", NULL};
     for (int i = 0; hostile_exts[i] != NULL; i++) {
         if (zend_hash_str_exists(&module_registry, hostile_exts[i], strlen(hostile_exts[i]))) {
-            // Using E_CORE_ERROR during MINIT to stop PHP entirely if hostile extensions are present
-            zend_error(E_CORE_ERROR, "Kage Security: Hostile extension '%s' detected. Execution terminated for safety.", hostile_exts[i]);
-            return FAILURE;
+            // Clean exit with a clear message to stderr
+            fprintf(stderr, "\n[KAGE SECURITY] Hostile extension '%s' detected.\n", hostile_exts[i]);
+            fprintf(stderr, "[KAGE SECURITY] Execution blocked for safety. Please disable '%s' to run this script.\n\n", hostile_exts[i]);
+            exit(1);
         }
     }
 
@@ -90,11 +153,18 @@ PHP_MINIT_FUNCTION(kage)
     // Register constants
     REGISTER_STRING_CONSTANT("KAGE_VERSION", PHP_KAGE_VERSION, CONST_CS | CONST_PERSISTENT);
 
+    // Phase 2: Register compiler hook
+    original_compile_file = zend_compile_file;
+    zend_compile_file = kage_compile_file;
+
     return SUCCESS;
 }
 
 PHP_MSHUTDOWN_FUNCTION(kage)
 {
+    // Restore original compiler hook
+    zend_compile_file = original_compile_file;
+
     // Clean up context system
     kage_context *ctx = kage_get_context();
     if (ctx) {
