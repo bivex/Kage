@@ -35,7 +35,7 @@ static void kage_parse_operands(const char *operands, zend_op_encrypted *op) {
 static void kage_extract_filename(const char *line, vld_bytecode_info *info) {
     if (info->source_file) return; // Already extracted
 
-    char *filename_start = strstr(line, "filename:");
+    const char *filename_start = strstr(line, "filename:");
     if (filename_start) {
         filename_start += KAGE_FILENAME_PREFIX_LEN;
         while (*filename_start == ' ') filename_start++;
@@ -74,7 +74,7 @@ PHPAPI vld_bytecode_info* kage_parse_vld_output(const char *vld_output) {
             op->opcode = kage_opcode_from_string(opcode_str);
 
             // Парсим операнды
-            char *operands = strstr(line, opcode_str);
+            const char *operands = strstr(line, opcode_str);
             if (operands) {
                 operands += strlen(opcode_str);
                 kage_parse_operands(operands, op);
@@ -266,7 +266,7 @@ PHPAPI zval* kage_decrypt_operand(zval *operand, const char *key, size_t offset)
 }
 
 // Сериализация/десериализация
-PHPAPI char* kage_serialize_bytecode(vld_bytecode_info *bytecode) {
+PHPAPI char* kage_serialize_bytecode(const vld_bytecode_info *bytecode) {
     if (!bytecode) return NULL;
     
     smart_str buffer = {0};
