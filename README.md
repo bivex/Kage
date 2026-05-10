@@ -156,9 +156,23 @@ Before installing Kage, ensure your system meets the following requirements:
 
 Kage operates as a PHP extension that provides secure code encryption and runtime execution capabilities. The installation process builds a native C extension that integrates with PHP's Zend Engine, enabling high-performance encryption/decryption operations. The system supports both CLI and web server environments, with automatic loading of the extension via PHP's configuration files.
 
-### Step-by-Step Installation
+### Installation with Docker (Recommended)
 
-Follow these procedures to install Kage on your system:
+The easiest way to get started with Kage is using Docker. This ensures all dependencies and the C extension are correctly configured in an isolated environment.
+
+1. **Build and Run Tests:**
+   ```bash
+   docker-compose up --build
+   ```
+   This command builds the container, compiles the C extension, and runs the full test suite.
+
+2. **Run Your Own Scripts:**
+   To run a custom PHP script using the Kage extension within the container:
+   ```bash
+   docker-compose run kage-test php your_script.php
+   ```
+
+### Step-by-Step Installation (Manual)
 
 1. **Clone the Repository:**
    ```bash
