@@ -100,16 +100,22 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
                     code_len -= 2;
                 }
 
-                // Strip closing tag
-                if (code_len >= 2 && memcmp(code_start + code_len - 2, "?>", 2) == 0) {
-                    code_len -= 2;
-                }
-
-                zval code_zv;
-                ZVAL_STRINGL(&code_zv, code_start, code_len);
-                op_array = zend_compile_string(&code_zv, filename);
-                zval_ptr_dtor(&code_zv);
-            } else {
+                 // Strip closing tag
+                 if (code_len >= 2 && memcmp(code_start + code_len - 2, "?>", 2) == 0) {
+                     code_len -= 2;
+                 }
+ 
+ #if PHP_VERSION_ID < 80000
+                 zval code_zv;
+                 ZVAL_STRINGL(&code_zv, code_start, code_len);
+                 op_array = zend_compile_string(&code_zv, filename);
+                 zval_ptr_dtor(&code_zv);
+ #else
+                 zend_string *code_str = zend_string_init(code_start, code_len, 0);
+                 op_array = zend_compile_string(code_str, filename);
+                 zend_string_release(code_str);
+ #endif
+             } else {
                 // Not a Kage-protected file
                 if (fp) {
                     fclose(fp);
