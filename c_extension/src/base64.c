@@ -9,6 +9,14 @@
 
 #include "base64.h"
 
+// Base64 algorithm constants
+#define KAGE_BASE64_PADDING_CHAR '='
+#define KAGE_BASE64_INPUT_GROUP_SIZE 3
+#define KAGE_BASE64_OUTPUT_GROUP_SIZE 4
+#define KAGE_BASE64_MASK_6BIT 0x3F
+#define KAGE_BASE64_MASK_4BIT 0x0F
+#define KAGE_BASE64_MASK_2BIT 0x03
+
 char* kage_base64_encode(const unsigned char *input, size_t input_length, size_t *output_length) {
     if (input == NULL) {
         if (output_length != NULL) {
@@ -22,8 +30,8 @@ char* kage_base64_encode(const unsigned char *input, size_t input_length, size_t
     static const char base64_chars[] = 
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     
-    // Calculate output length (4 * ceil(n/3))
-    *output_length = 4 * ((input_length + 2) / 3);
+    // Calculate output length (KAGE_BASE64_OUTPUT_GROUP_SIZE * ceil(input_length / KAGE_BASE64_INPUT_GROUP_SIZE))
+    *output_length = KAGE_BASE64_OUTPUT_GROUP_SIZE * ((input_length + KAGE_BASE64_INPUT_GROUP_SIZE - 1) / KAGE_BASE64_INPUT_GROUP_SIZE);
     
     // Allocate memory for output
     char *encoded_data = emalloc(*output_length + 1);  // +1 for null terminator
@@ -35,9 +43,9 @@ char* kage_base64_encode(const unsigned char *input, size_t input_length, size_t
     // Encode the input data
     size_t i = 0;
     size_t j = 0;
-    unsigned char a;
-    unsigned char b;
-    unsigned char c;
+    unsigned char a = 0;
+    unsigned char b = 0;
+    unsigned char c = 0;
     
     for (i = 0; i < input_length; i += 3) {
         // Get the next three bytes (or fewer if at the end)
@@ -50,9 +58,15 @@ char* kage_base64_encode(const unsigned char *input, size_t input_length, size_t
         encoded_data[j++] = base64_chars[((a << 4) & 0x30) | ((b >> 4) & 0x0F)];
         
         if (i + 1 < input_length) {
-            encoded_data[j++] = base64_chars[((b << 2) & 0x3C) | ((c >> 6) & 0x03)];
+            encoded_data[j++] = base64_chars[((b << 4) & 0x3C) | ((c >> 6) & KAGE_BASE64_MASK_2BIT)];
         } else {
-            encoded_data[j++] = '=';  // Padding
+            encoded_data[j++] = KAGE_BASE64_PADDING_CHAR;  // Padding
+        }
+
+        if (i + 2 < input_length) {
+            encoded_data[j++] = base64_chars[c & KAGE_BASE64_MASK_6BIT];
+        } else {
+            encoded_data[j++] = KAGE_BASE64_PADDING_CHAR;  // Padding
         }
         
         if (i + 2 < input_length) {
@@ -76,27 +90,25 @@ static const char BASE64_DECODE_TABLE[] = {
     -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1
 };
 
-// Helper function to validate base64 input
+// Helper function to validate base64 input (single exit)
 static int kage_base64_validate_input(const char *data, size_t input_length, size_t *padding) {
+    int valid = 1;
+
     if (!data || input_length == 0) {
-        return 0;
+        valid = 0;
+    } else if (input_length % 4 != 0) {
+        valid = 0;
+    } else {
+        *padding = 0;
+        if (data[input_length - 1] == KAGE_BASE64_PADDING_CHAR) {
+            (*padding)++;
+        }
+        if (input_length > 1 && data[input_length - 2] == KAGE_BASE64_PADDING_CHAR) {
+            (*padding)++;
+        }
     }
 
-    // Check length is multiple of 4
-    if (input_length % 4 != 0) {
-        return 0;
-    }
-
-    // Count padding characters
-    *padding = 0;
-    if (data[input_length - 1] == '=') {
-        (*padding)++;
-    }
-    if (input_length > 1 && data[input_length - 2] == '=') {
-        (*padding)++;
-    }
-
-    return 1;
+    return valid;
 }
 
 // Helper function to decode a single base64 character
@@ -105,46 +117,43 @@ static int kage_base64_decode_char(char c) {
     return BASE64_DECODE_TABLE[(unsigned char)c];
 }
 
-// Helper function to decode a base64 quartet
+// Helper function to decode a base64 quartet (single exit point)
 static int kage_base64_decode_quartet(const char *input, unsigned char *output, size_t *output_pos, int *remaining) {
-    int b1 = kage_base64_decode_char(input[0]);
-    int b2 = kage_base64_decode_char(input[1]);
-    int b3 = kage_base64_decode_char(input[2]);
-    int b4 = kage_base64_decode_char(input[3]);
+    int result = 0; // Assume failure
+    int b1, b2, b3, b4;
 
-    if (b1 < 0 || b2 < 0) {
-        return 0; // Invalid characters
-    }
+    b1 = kage_base64_decode_char(input[0]);
+    b2 = kage_base64_decode_char(input[1]);
+    if (b1 < 0 || b2 < 0) goto end;
 
-    // First byte
     output[(*output_pos)++] = (b1 << 2) | (b2 >> 4);
 
     if (input[2] == '=') {
         *remaining = 1;
-        return 1; // End of data
+        result = 1;
+        goto end;
     }
 
-    if (b3 < 0) {
-        return 0; // Invalid character
-    }
+    b3 = kage_base64_decode_char(input[2]);
+    if (b3 < 0) goto end;
 
-    // Second byte
     output[(*output_pos)++] = ((b2 & 0x0F) << 4) | (b3 >> 2);
 
     if (input[3] == '=') {
         *remaining = 2;
-        return 1; // End of data
+        result = 1;
+        goto end;
     }
 
-    if (b4 < 0) {
-        return 0; // Invalid character
-    }
+    b4 = kage_base64_decode_char(input[3]);
+    if (b4 < 0) goto end;
 
-    // Third byte
     output[(*output_pos)++] = ((b3 & 0x03) << 6) | b4;
-
     *remaining = 3;
-    return 1;
+    result = 1;
+
+end:
+    return result;
 }
 
 unsigned char* kage_base64_decode(const char *data, size_t input_length, size_t *output_length) {

@@ -69,25 +69,20 @@ static int ast_to_bytecode(kage_ast_node *node, kage_vm_state *state);
  * @return Pointer to the new node, or NULL on allocation failure
  */
 static kage_ast_node* kage_ast_node_create(kage_ast_type type) {
-    /* Validate input */
-    if (type < KAGE_AST_PROGRAM || type > KAGE_AST_CALL) {
+    kage_ast_node *node = NULL;
+
+    if (type >= KAGE_AST_PROGRAM && type <= KAGE_AST_CALL) {
+        node = (kage_ast_node *)emalloc(sizeof(kage_ast_node));
+        if (node) {
+            node->type = type;
+            ZVAL_NULL(&node->value);
+            node->left = node->right = node->next = NULL;
+        } else {
+            zend_error(E_WARNING, "Kage AST: Memory allocation failed for AST node");
+        }
+    } else {
         zend_error(E_WARNING, "Kage AST: Invalid node type %d", type);
-        return NULL;
     }
-
-    /* Allocate and initialize node */
-    kage_ast_node *node = (kage_ast_node *)emalloc(sizeof(kage_ast_node));
-    if (node == NULL) {
-        zend_error(E_WARNING, "Kage AST: Memory allocation failed for AST node");
-        return NULL;
-    }
-
-    /* Initialize all fields to prevent undefined behavior */
-    node->type = type;
-    ZVAL_NULL(&node->value);
-    node->left = NULL;
-    node->right = NULL;
-    node->next = NULL;
 
     return node;
 }
@@ -99,16 +94,29 @@ static kage_ast_node* kage_ast_node_create(kage_ast_type type) {
  * @return Error code indicating validation result
  */
 static kage_parser_error_t validate_parser_state(const kage_ast_parser *parser) {
-    if (parser == NULL) {
-        return KAGE_PARSER_ERROR_NULL_POINTER;
+    kage_parser_error_t result = KAGE_PARSER_SUCCESS;
+
+    if (parser == NULL || parser->source == NULL) {
+        result = KAGE_PARSER_ERROR_NULL_POINTER;
+    } else if (parser->position > parser->length) {
+        result = KAGE_PARSER_ERROR_SYNTAX_ERROR;
     }
-    if (parser->source == NULL) {
-        return KAGE_PARSER_ERROR_NULL_POINTER;
+
+    return result;
+}
+
+// Get error message string for parser error code
+static const char* kage_parser_error_message(kage_parser_error_t error) {
+    const char *msg = "Unknown parser error";
+    switch (error) {
+        case KAGE_PARSER_ERROR_NULL_POINTER:      msg = "Null pointer encountered";      break;
+        case KAGE_PARSER_ERROR_MEMORY_ALLOCATION: msg = "Memory allocation failed";      break;
+        case KAGE_PARSER_ERROR_SYNTAX_ERROR:      msg = "Syntax error";                  break;
+        case KAGE_PARSER_ERROR_INVALID_TOKEN:     msg = "Invalid token";                 break;
+        case KAGE_PARSER_ERROR_UNCLOSED_STRING:   msg = "Unclosed string literal";       break;
+        default:                                  msg = "Unknown parser error";          break;
     }
-    if (parser->position > parser->length) {
-        return KAGE_PARSER_ERROR_SYNTAX_ERROR;
-    }
-    return KAGE_PARSER_SUCCESS;
+    return msg;
 }
 
 /**
@@ -119,27 +127,7 @@ static kage_parser_error_t validate_parser_state(const kage_ast_parser *parser) 
  * @param context Additional context information
  */
 static void report_parser_error(kage_parser_error_t error, size_t position, const char *context) {
-    const char *error_msg;
-
-    switch (error) {
-        case KAGE_PARSER_ERROR_NULL_POINTER:
-            error_msg = "Null pointer encountered";
-            break;
-        case KAGE_PARSER_ERROR_MEMORY_ALLOCATION:
-            error_msg = "Memory allocation failed";
-            break;
-        case KAGE_PARSER_ERROR_SYNTAX_ERROR:
-            error_msg = "Syntax error";
-            break;
-        case KAGE_PARSER_ERROR_INVALID_TOKEN:
-            error_msg = "Invalid token";
-            break;
-        case KAGE_PARSER_ERROR_UNCLOSED_STRING:
-            error_msg = "Unclosed string literal";
-            break;
-        default:
-            error_msg = "Unknown parser error";
-    }
+    const char *error_msg = kage_parser_error_message(error);
 
     if (context && *context) {
         zend_error(E_WARNING, "Kage AST: %s at position %zu (%s)", error_msg, position, context);
@@ -193,60 +181,66 @@ PHPAPI void kage_ast_free(kage_ast_node *node) {
  * @return Parsed AST node or NULL on error
  */
 static kage_ast_node* parse_string_internal(kage_ast_parser *parser, kage_parser_error_t *error) {
-    *error = validate_parser_state(parser);
-    if (*error != KAGE_PARSER_SUCCESS) {
-        return NULL;
+    kage_ast_node *node = NULL;
+    char *str = NULL;
+    const char *start = NULL, *end = NULL;
+    size_t len = 0;
+    kage_parser_error_t local_error = KAGE_PARSER_SUCCESS;
+
+    local_error = validate_parser_state(parser);
+    if (local_error != KAGE_PARSER_SUCCESS) {
+        *error = local_error;
+        goto cleanup;
     }
 
-    /* Create string node */
-    kage_ast_node *node = kage_ast_node_create(KAGE_AST_STRING);
-    if (node == NULL) {
+    node = kage_ast_node_create(KAGE_AST_STRING);
+    if (!node) {
         *error = KAGE_PARSER_ERROR_MEMORY_ALLOCATION;
-        return NULL;
+        goto cleanup;
     }
 
-    /* Skip opening quote */
     parser->position++;
 
-    /* Validate we have content after opening quote */
     if (parser->position >= parser->length) {
         *error = KAGE_PARSER_ERROR_UNCLOSED_STRING;
-        kage_ast_free(node);
-        return NULL;
+        goto cleanup;
     }
 
-    /* Find closing quote */
-    const char *start = parser->source + parser->position;
-    const char *end = (const char *)memchr(start, '"', parser->length - parser->position);
-
-    if (end == NULL) {
+    start = parser->source + parser->position;
+    end = (const char *)memchr(start, '"', parser->length - parser->position);
+    if (!end) {
         report_parser_error(KAGE_PARSER_ERROR_UNCLOSED_STRING, parser->position - 1, NULL);
-        kage_ast_free(node);
-        parser->position = parser->length; /* Prevent infinite loops */
+        parser->position = parser->length;
         *error = KAGE_PARSER_ERROR_UNCLOSED_STRING;
-        return NULL;
+        goto cleanup;
     }
 
-    /* Extract and validate string content */
-    size_t len = (size_t)(end - start);
+    len = (size_t)(end - start);
     if (len == 0) {
-        /* Empty string is valid */
         ZVAL_EMPTY_STRING(&node->value);
     } else {
-        char *str = (char *)estrndup(start, len);
-        if (str == NULL) {
-            kage_ast_free(node);
+        str = (char *)estrndup(start, len);
+        if (!str) {
             *error = KAGE_PARSER_ERROR_MEMORY_ALLOCATION;
-            return NULL;
+            goto cleanup;
         }
         ZVAL_STRING(&node->value, str);
         efree(str);
+        str = NULL;
     }
 
-    /* Update parser position */
     parser->position += len + 1;
     *error = KAGE_PARSER_SUCCESS;
     return node;
+
+cleanup:
+    if (node) {
+        kage_ast_free(node);
+    }
+    if (str) {
+        efree(str);
+    }
+    return NULL;
 }
 
 
@@ -258,42 +252,44 @@ static kage_ast_node* parse_string_internal(kage_ast_parser *parser, kage_parser
  * @return Parsed encrypt node or NULL on error
  */
 static kage_ast_node* parse_encrypt_operation(kage_ast_parser *parser, kage_parser_error_t *error) {
-    *error = validate_parser_state(parser);
-    if (*error != KAGE_PARSER_SUCCESS) {
-        return NULL;
+    kage_ast_node *node = NULL;
+    kage_parser_error_t local_error = KAGE_PARSER_SUCCESS;
+
+    local_error = validate_parser_state(parser);
+    if (local_error != KAGE_PARSER_SUCCESS) {
+        *error = local_error;
+        goto cleanup;
     }
 
-    /* Create encrypt node */
-    kage_ast_node *node = kage_ast_node_create(KAGE_AST_ENCRYPT);
-    if (node == NULL) {
+    node = kage_ast_node_create(KAGE_AST_ENCRYPT);
+    if (!node) {
         *error = KAGE_PARSER_ERROR_MEMORY_ALLOCATION;
-        return NULL;
+        goto cleanup;
     }
 
-    /* Consume "encrypt" keyword */
     parser->position += 7;
-
-    /* Skip whitespace after keyword */
     skip_whitespace(parser);
 
-    /* Validate we have an operand */
     if (parser->position >= parser->length) {
         report_parser_error(KAGE_PARSER_ERROR_SYNTAX_ERROR, parser->position, "missing operand for encrypt");
-        kage_ast_free(node);
         *error = KAGE_PARSER_ERROR_SYNTAX_ERROR;
-        return NULL;
+        goto cleanup;
     }
 
-    /* Parse operand (can be nested) */
-    node->left = parse_expression(parser, NULL); // No scope needed for sub-expressions
-    if (node->left == NULL) {
-        kage_ast_free(node);
+    node->left = parse_expression(parser, NULL);
+    if (!node->left) {
         *error = KAGE_PARSER_ERROR_SYNTAX_ERROR;
-        return NULL;
+        goto cleanup;
     }
 
     *error = KAGE_PARSER_SUCCESS;
     return node;
+
+cleanup:
+    if (node) {
+        kage_ast_free(node);
+    }
+    return NULL;
 }
 
 /**
@@ -304,42 +300,44 @@ static kage_ast_node* parse_encrypt_operation(kage_ast_parser *parser, kage_pars
  * @return Parsed decrypt node or NULL on error
  */
 static kage_ast_node* parse_decrypt_operation(kage_ast_parser *parser, kage_parser_error_t *error) {
-    *error = validate_parser_state(parser);
-    if (*error != KAGE_PARSER_SUCCESS) {
-        return NULL;
+    kage_ast_node *node = NULL;
+    kage_parser_error_t local_error = KAGE_PARSER_SUCCESS;
+
+    local_error = validate_parser_state(parser);
+    if (local_error != KAGE_PARSER_SUCCESS) {
+        *error = local_error;
+        goto cleanup;
     }
 
-    /* Create decrypt node */
-    kage_ast_node *node = kage_ast_node_create(KAGE_AST_DECRYPT);
-    if (node == NULL) {
+    node = kage_ast_node_create(KAGE_AST_DECRYPT);
+    if (!node) {
         *error = KAGE_PARSER_ERROR_MEMORY_ALLOCATION;
-        return NULL;
+        goto cleanup;
     }
 
-    /* Consume "decrypt" keyword */
     parser->position += 7;
-
-    /* Skip whitespace after keyword */
     skip_whitespace(parser);
 
-    /* Validate we have an operand */
     if (parser->position >= parser->length) {
         report_parser_error(KAGE_PARSER_ERROR_SYNTAX_ERROR, parser->position, "missing operand for decrypt");
-        kage_ast_free(node);
         *error = KAGE_PARSER_ERROR_SYNTAX_ERROR;
-        return NULL;
+        goto cleanup;
     }
 
-    /* Parse operand (can be nested) */
-    node->left = parse_expression(parser, NULL); // No scope needed for sub-expressions
-    if (node->left == NULL) {
-        kage_ast_free(node);
+    node->left = parse_expression(parser, NULL);
+    if (!node->left) {
         *error = KAGE_PARSER_ERROR_SYNTAX_ERROR;
-        return NULL;
+        goto cleanup;
     }
 
     *error = KAGE_PARSER_SUCCESS;
     return node;
+
+cleanup:
+    if (node) {
+        kage_ast_free(node);
+    }
+    return NULL;
 }
 
 /**
@@ -352,64 +350,41 @@ static kage_ast_node* parse_decrypt_operation(kage_ast_parser *parser, kage_pars
  * @return Parsed expression node or NULL on error
  */
 static kage_ast_node* parse_expression(kage_ast_parser *parser, kage_scope *scope) {
+    kage_ast_node *result = NULL;
     kage_parser_error_t error;
 
-    /* Validate parser state */
     error = validate_parser_state(parser);
-    if (error != KAGE_PARSER_SUCCESS) {
+    if (error == KAGE_PARSER_SUCCESS) {
+        skip_whitespace(parser);
+        if (parser->position < parser->length) {
+            char current_char = parser->source[parser->position];
+            if (current_char == '"') {
+                result = parse_string_internal(parser, &error);
+            } else if (parser->position + 6 < parser->length &&
+                       strncmp(parser->source + parser->position, "encrypt", 7) == 0) {
+                result = parse_encrypt_operation(parser, &error);
+            } else if (parser->position + 6 < parser->length &&
+                       strncmp(parser->source + parser->position, "decrypt", 7) == 0) {
+                result = parse_decrypt_operation(parser, &error);
+            } else {
+                report_parser_error(KAGE_PARSER_ERROR_INVALID_TOKEN, parser->position,
+                                   "expected string, 'encrypt', or 'decrypt'");
+                while (parser->position < parser->length &&
+                       !isspace((unsigned char)parser->source[parser->position]) &&
+                                               parser->source[parser->position] != '"') {
+                    parser->position++;
+                }
+                result = NULL;
+            }
+        }
+    } else {
         report_parser_error(error, parser->position, "invalid parser state");
-        return NULL;
     }
 
-    /* Skip leading whitespace */
-    skip_whitespace(parser);
-
-    /* Check for end of input */
-    if (parser->position >= parser->length) {
-        return NULL;
+    if (result && scope) {
+        kage_scope_register_ast_node(scope, result);
     }
-
-    /* Dispatch to appropriate parser based on next token */
-    char current_char = parser->source[parser->position];
-
-    if (current_char == '"') {
-        /* String literal */
-        kage_ast_node *node = parse_string_internal(parser, &error);
-        if (node && scope) {
-            kage_scope_register_ast_node(scope, node);
-        }
-        return node;
-    }
-    else if (parser->position + 6 < parser->length &&
-             strncmp(parser->source + parser->position, "encrypt", 7) == 0) {
-        /* Encrypt operation */
-        kage_ast_node *node = parse_encrypt_operation(parser, &error);
-        if (node && scope) {
-            kage_scope_register_ast_node(scope, node);
-        }
-        return node;
-    }
-    else if (parser->position + 6 < parser->length &&
-             strncmp(parser->source + parser->position, "decrypt", 7) == 0) {
-        /* Decrypt operation */
-        kage_ast_node *node = parse_decrypt_operation(parser, &error);
-        if (node && scope) {
-            kage_scope_register_ast_node(scope, node);
-        }
-        return node;
-    }
-    else {
-        /* Invalid token */
-        report_parser_error(KAGE_PARSER_ERROR_INVALID_TOKEN, parser->position,
-                           "expected string, 'encrypt', or 'decrypt'");
-        /* Skip invalid token to prevent infinite loops */
-        while (parser->position < parser->length &&
-               !isspace((unsigned char)parser->source[parser->position]) &&
-               parser->source[parser->position] != '"') {
-            parser->position++;
-        }
-        return NULL;
-    }
+    return result;
 }
 
 /**
@@ -427,79 +402,76 @@ static kage_ast_node* parse_expression(kage_ast_parser *parser, kage_scope *scop
  * @return Root AST node on success, NULL on error (errors are logged)
  */
 PHPAPI kage_ast_node* kage_ast_parse(const char *source) {
-    /* Input validation */
+    kage_ast_node *result = NULL;
+    kage_scope *scope = NULL;
+    kage_ast_node *program = NULL;
+    kage_ast_node *current = NULL;
+    bool found_expression = false;
+    kage_ast_parser parser = {0};
+
     if (source == NULL) {
         zend_error(E_WARNING, "Kage AST: Cannot parse NULL source");
-        return NULL;
+        goto end;
     }
 
     size_t source_length = strlen(source);
     if (source_length == 0) {
         zend_error(E_WARNING, "Kage AST: Cannot parse empty source");
-        return NULL;
+        goto end;
     }
 
-    /* Create memory scope for automatic cleanup */
-    kage_scope *scope = kage_scope_create(NULL);
+    scope = kage_scope_create(NULL);
     if (!scope) {
-        return NULL;
+        goto end;
     }
 
-    /* Initialize parser */
-    kage_ast_parser parser = {
+    parser = (kage_ast_parser){
         .source = source,
         .position = 0,
         .length = source_length,
         .error_handling = {0}
     };
 
-    /* Create program root node */
     KAGE_SCOPE_ALLOC_AST_NODE(scope, program);
     if (!program) {
-        kage_scope_destroy(scope);
-        return NULL; /* Error already logged */
+        goto end; /* Error already logged by allocation macro */
     }
     program->type = KAGE_AST_PROGRAM;
 
-    kage_ast_node *current = program;
-    bool found_expression = false;
+    current = program;
+    found_expression = false;
 
-    /* Parse expressions until end of input */
     while (parser.position < parser.length) {
-        /* Skip whitespace between expressions */
         skip_whitespace(&parser);
         if (parser.position >= parser.length) {
             break;
         }
 
-        /* Parse next expression */
         kage_ast_node *expr = parse_expression(&parser, scope);
-        if (expr == NULL) {
-            /* Parse error - scope will clean up automatically */
-            kage_scope_destroy(scope);
-            return NULL;
+        if (!expr) {
+            goto end;
         }
 
-        /* Add expression to program */
         current->next = expr;
         current = expr;
         found_expression = true;
     }
 
-    /* Validate that we parsed at least one expression */
     if (!found_expression) {
         zend_error(E_WARNING, "Kage AST: No valid expressions found in source");
-        kage_scope_destroy(scope);
-        return NULL;
+        goto end;
     }
 
-    /* Return the program node (scope will keep it alive) */
-    scope->cleanup_on_exit = false; // Don't clean up the result
-    kage_scope_destroy(scope);
-    return program;
+    /* Success: transfer ownership to caller */
+    scope->cleanup_on_exit = false;
+    result = program;
+    program = NULL; // Prevent cleanup
 
-    /* Should not reach here */
-    return NULL;
+end:
+    if (scope) {
+        kage_scope_destroy(scope);
+    }
+    return result;
 }
 
 /**
@@ -511,26 +483,24 @@ PHPAPI kage_ast_node* kage_ast_parse(const char *source) {
  * @return SUCCESS on success, FAILURE on error
  */
 static int add_instruction(kage_vm_state *state, kage_opcode opcode, zval *operand) {
-    if (state == NULL || state->instructions == NULL) {
-        return FAILURE;
+    int result = FAILURE;
+
+    if (state != NULL && state->instructions != NULL) {
+        if (state->instruction_count < KAGE_PARSER_DEFAULT_STACK_SIZE) {
+            kage_instruction *instr = &state->instructions[state->instruction_count++];
+            instr->opcode = opcode;
+            if (operand != NULL) {
+                ZVAL_COPY(&instr->operand, operand);
+            } else {
+                ZVAL_NULL(&instr->operand);
+            }
+            result = SUCCESS;
+        } else {
+            zend_error(E_WARNING, "Kage AST: Too many instructions generated");
+        }
     }
 
-    /* Check bounds - this is a simple check, in production you'd want dynamic resizing */
-    if (state->instruction_count >= KAGE_PARSER_DEFAULT_STACK_SIZE) {
-        zend_error(E_WARNING, "Kage AST: Too many instructions generated");
-        return FAILURE;
-    }
-
-    kage_instruction *instr = &state->instructions[state->instruction_count++];
-    instr->opcode = opcode;
-
-    if (operand != NULL) {
-        ZVAL_COPY(&instr->operand, operand);
-    } else {
-        ZVAL_NULL(&instr->operand);
-    }
-
-    return SUCCESS;
+    return result;
 }
 
 /**
@@ -555,17 +525,15 @@ static int convert_string_node(kage_ast_node *node, kage_vm_state *state) {
  * @return SUCCESS on success, FAILURE on error
  */
 static int convert_encrypt_node(kage_ast_node *node, kage_vm_state *state) {
-    if (node == NULL || state == NULL || node->left == NULL) {
-        return FAILURE;
+    int result = FAILURE;
+
+    if (node != NULL && state != NULL && node->left != NULL) {
+        if (ast_to_bytecode(node->left, state) == SUCCESS) {
+            result = add_instruction(state, KAGE_OP_ENCRYPT, NULL);
+        }
     }
 
-    /* Convert operand first */
-    if (ast_to_bytecode(node->left, state) != SUCCESS) {
-        return FAILURE;
-    }
-
-    /* Add encrypt instruction */
-    return add_instruction(state, KAGE_OP_ENCRYPT, NULL);
+    return result;
 }
 
 /**
@@ -576,17 +544,15 @@ static int convert_encrypt_node(kage_ast_node *node, kage_vm_state *state) {
  * @return SUCCESS on success, FAILURE on error
  */
 static int convert_decrypt_node(kage_ast_node *node, kage_vm_state *state) {
-    if (node == NULL || state == NULL || node->left == NULL) {
-        return FAILURE;
+    int result = FAILURE;
+
+    if (node != NULL && state != NULL && node->left != NULL) {
+        if (ast_to_bytecode(node->left, state) == SUCCESS) {
+            result = add_instruction(state, KAGE_OP_DECRYPT, NULL);
+        }
     }
 
-    /* Convert operand first */
-    if (ast_to_bytecode(node->left, state) != SUCCESS) {
-        return FAILURE;
-    }
-
-    /* Add decrypt instruction */
-    return add_instruction(state, KAGE_OP_DECRYPT, NULL);
+    return result;
 }
 
 /**
@@ -597,20 +563,25 @@ static int convert_decrypt_node(kage_ast_node *node, kage_vm_state *state) {
  * @return SUCCESS on success, FAILURE on error
  */
 static int convert_program_node(kage_ast_node *node, kage_vm_state *state) {
+    int result = FAILURE;
+    kage_ast_node *stmt = NULL;
+
     if (node == NULL || state == NULL) {
-        return FAILURE;
+        goto end;
     }
 
-    /* Process all statements in the program */
-    kage_ast_node *stmt = node->next;
+    stmt = node->next;
     while (stmt != NULL) {
         if (ast_to_bytecode(stmt, state) != SUCCESS) {
-            return FAILURE;
+            goto end;
         }
         stmt = stmt->next;
     }
 
-    return SUCCESS;
+    result = SUCCESS;
+
+end:
+    return result;
 }
 
 /**
@@ -622,28 +593,34 @@ static int convert_program_node(kage_ast_node *node, kage_vm_state *state) {
  * @return SUCCESS on success, FAILURE on error
  */
 static int ast_to_bytecode(kage_ast_node *node, kage_vm_state *state) {
+    int result = FAILURE;
+
     if (node == NULL || state == NULL) {
-        return FAILURE;
+        goto end;
     }
 
     /* Dispatch to appropriate conversion function based on node type */
     switch (node->type) {
         case KAGE_AST_STRING:
-            return convert_string_node(node, state);
-
+            result = convert_string_node(node, state);
+            break;
         case KAGE_AST_ENCRYPT:
-            return convert_encrypt_node(node, state);
-
+            result = convert_encrypt_node(node, state);
+            break;
         case KAGE_AST_DECRYPT:
-            return convert_decrypt_node(node, state);
-
+            result = convert_decrypt_node(node, state);
+            break;
         case KAGE_AST_PROGRAM:
-            return convert_program_node(node, state);
-
+            result = convert_program_node(node, state);
+            break;
         default:
             zend_error(E_WARNING, "Kage AST: Unknown AST node type: %d", node->type);
-            return FAILURE;
+            result = FAILURE;
+            break;
     }
+
+end:
+    return result;
 }
 
 /**
@@ -655,32 +632,34 @@ static int ast_to_bytecode(kage_ast_node *node, kage_vm_state *state) {
  * @return SUCCESS on successful conversion, FAILURE on error
  */
 PHPAPI int kage_ast_to_bytecode(kage_ast_node *node, kage_vm_state *state) {
+    int result = FAILURE;
+
     /* Input validation */
     if (node == NULL || state == NULL) {
         zend_error(E_WARNING, "Kage AST: Invalid parameters for bytecode conversion");
-        return FAILURE;
+        goto end;
     }
 
     /* Allocate instruction buffer */
     state->instructions = (kage_instruction *)emalloc(KAGE_PARSER_DEFAULT_STACK_SIZE * sizeof(kage_instruction));
     if (state->instructions == NULL) {
         zend_error(E_WARNING, "Kage AST: Failed to allocate instruction memory");
-        return FAILURE;
+        goto end;
     }
 
     /* Initialize instruction counter */
     state->instruction_count = 0;
 
     /* Perform conversion */
-    int result = ast_to_bytecode(node, state);
-
-    /* Clean up on failure */
+    result = ast_to_bytecode(node, state);
     if (result != SUCCESS) {
         efree(state->instructions);
         state->instructions = NULL;
         state->instruction_count = 0;
+        result = FAILURE;
     }
 
+end:
     return result;
 }
 
@@ -711,26 +690,30 @@ PHP_FUNCTION(kage_ast_parse) {
  * @return true if decryption succeeded, false otherwise
  */
 static bool try_decrypt_zval(zval *value, zend_string *key) {
+    bool success = false;
+    zval decrypted_result;
+
     if (value == NULL || key == NULL) {
-        return false;
+        goto end;
     }
 
     /* Only attempt decryption on strings */
     if (Z_TYPE_P(value) != IS_STRING) {
-        return false;
+        goto end;
     }
 
-    zval decrypted_result;
     if (kage_internal_decrypt(&decrypted_result, value, key) != SUCCESS) {
-        return false;
+        goto end;
     }
 
     /* Replace original value with decrypted result */
     zval_ptr_dtor(value);
     ZVAL_COPY_VALUE(value, &decrypted_result);
-    ZVAL_UNDEF(&decrypted_result); /* Prevent double destruction */
+    ZVAL_UNDEF(&decrypted_result);
+    success = true;
 
-    return true;
+end:
+    return success;
 }
 
 /**
@@ -747,7 +730,7 @@ static void fully_decrypt_result(zval *result, zend_string *key) {
 
     /* Iteratively decrypt until we can't decrypt anymore */
     while (try_decrypt_zval(result, key)) {
-        /* Continue decrypting - the loop condition handles the stopping */
+        continue; // Decryption happens in condition; loop until no more layers
     }
 }
 
