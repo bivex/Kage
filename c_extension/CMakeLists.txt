@@ -1,45 +1,56 @@
-cmake_minimum_required(VERSION 3.10)
-project(kage VERSION 0.1.0 LANGUAGES C)
+cmake_minimum_required(VERSION 3.16)
+project(kage LANGUAGES C)
 
-# --- Configuration Variables ---
-# These variables can be set externally via -DVAR=VALUE when calling cmake
-# Defaults are retrieved from php-config
+# Modern CMake policies
+cmake_policy(SET CMP0074 NEW)  # find_package uses <PackageName>_ROOT variables
 
-# PHP API version and directories
-# Default values are retrieved via execute_process commands below if not provided
-if (NOT DEFINED PHP_EXTENSION_DIR)
-    execute_process(
-        COMMAND php-config --extension-dir
-        OUTPUT_VARIABLE PHP_EXTENSION_DIR
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-endif()
+# --- Options ---
 
-if (NOT DEFINED PHP_INI_DIR)
-    execute_process(
-        COMMAND php-config --ini-dir
-        OUTPUT_VARIABLE PHP_INI_DIR
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-endif()
-
-# PHP include directory (always derived from php-config)
-execute_process(
-    COMMAND php-config --include-dir
-    OUTPUT_VARIABLE PHP_INCLUDE_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-
-# Extension properties
-set(EXTENSION_NAME "kage")
-set(EXTENSION_VERSION "0.1.0")
+option(BUILD_TESTS "Build test suite" OFF)
+option(KAGE_DEBUG "Enable debug logging" OFF)
 
 # --- Find Dependencies ---
 
-# Find PkgConfig (required for libsodium)
-find_package(PkgConfig REQUIRED)
+# PHP (prefer pkg-config, fallback to php-config)
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(PHP QUIET php)
+endif()
 
-# Find libsodium using PkgConfig
+if(NOT PHP_FOUND)
+    find_program(PHP_CONFIG php-config)
+    if(PHP_CONFIG)
+        execute_process(
+            COMMAND ${PHP_CONFIG} --include-dir
+            OUTPUT_VARIABLE PHP_INCLUDE_DIR
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        execute_process(
+            COMMAND ${PHP_CONFIG} --extension-dir
+            OUTPUT_VARIABLE PHP_EXTENSION_DIR
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        execute_process(
+            COMMAND ${PHP_CONFIG} --ini-dir
+            OUTPUT_VARIABLE PHP_INI_DIR
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+    else()
+        message(FATAL_ERROR "php-config not found. Install PHP development tools.")
+    endif()
+else()
+    set(PHP_INCLUDE_DIR ${PHP_INCLUDE_DIRS})
+    # Derive extension/ini dirs from PHP_ROOT or use defaults
+    if(NOT DEFINED PHP_EXTENSION_DIR)
+        set(PHP_EXTENSION_DIR "${PHP_LIBDIR}/php/extensions/no-debug-non-zts-${PHP_MAJOR_VERSION}${PHP_MINOR_VERSION}")
+    endif()
+    if(NOT DEFINED PHP_INI_DIR)
+        set(PHP_INI_DIR "${PHP_ROOT}/etc/php/${PHP_MAJOR_VERSION}.${PHP_MINOR_VERSION}")
+    endif()
+endif()
+
+# libsodium via PkgConfig (required)
+find_package(PkgConfig REQUIRED)
 pkg_check_modules(SODIUM REQUIRED libsodium)
 
 # --- Source Files ---
@@ -54,76 +65,99 @@ set(SOURCES
     src/base64.c
     src/vm.c
     src/ast.c
+    # Phase 3: opcode mapping (placeholder)
+    # src/kage_opcode_map.c
 )
 
-# --- Define PHP Extension Target ---
+# --- PHP Extension Target ---
 
-# Create shared library
-add_library(${EXTENSION_NAME} SHARED ${SOURCES})
+add_library(${PROJECT_NAME} SHARED ${SOURCES})
 
-# Set include directories
-target_include_directories(${EXTENSION_NAME} PRIVATE
-    ${PHP_INCLUDE_DIR}
-    ${PHP_INCLUDE_DIR}/main
-    ${PHP_INCLUDE_DIR}/Zend
-    ${PHP_INCLUDE_DIR}/TSRM
-    ${SODIUM_INCLUDE_DIRS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
-
-# Set compile definitions
-target_compile_definitions(${EXTENSION_NAME} PRIVATE
-    COMPILE_DL_KAGE
-    ZEND_ENABLE_STATIC_TSRMLS_CACHE=1
-    PHP_EXTENSION
-    HAVE_CONFIG_H
-)
-
-# Set compile options
-target_compile_options(${EXTENSION_NAME} PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
-
-# Link libraries and options
-target_link_libraries(${EXTENSION_NAME} PRIVATE
-    ${SODIUM_LIBRARIES}
-)
-target_link_directories(${EXTENSION_NAME} PRIVATE
-    ${SODIUM_LIBRARY_DIRS}
-)
-# Allow unresolved symbols (resolved at runtime from PHP)
-target_link_options(${EXTENSION_NAME} PRIVATE
-    "-undefined" "dynamic_lookup"
-)
-target_link_directories(${EXTENSION_NAME} PRIVATE
-    ${SODIUM_LIBRARY_DIRS}
-)
-
-# Set output properties
-set_target_properties(${EXTENSION_NAME} PROPERTIES
+# Modern target properties
+set_target_properties(${PROJECT_NAME} PROPERTIES
     PREFIX ""
-    OUTPUT_NAME "${EXTENSION_NAME}"
-    # Output to CMAKE_BINARY_DIR so it's easily accessible from build.sh
+    OUTPUT_NAME "${PROJECT_NAME}"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
 )
 
-# --- Installation Rules ---
+# Include directories — SYSTEM for external deps
+target_include_directories(${PROJECT_NAME}
+    SYSTEM PRIVATE
+        ${PHP_INCLUDE_DIR}
+        ${PHP_INCLUDE_DIR}/main
+        ${PHP_INCLUDE_DIR}/Zend
+        ${PHP_INCLUDE_DIR}/TSRM
+        ${SODIUM_INCLUDE_DIRS}
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 
-# Install shared library to PHP extension directory
-install(TARGETS ${EXTENSION_NAME}
+# Compile definitions
+target_compile_definitions(${PROJECT_NAME}
+    PRIVATE
+        COMPILE_DL_KAGE
+        ZEND_ENABLE_STATIC_TSRMLS_CACHE=1
+        PHP_EXTENSION
+        HAVE_CONFIG_H
+        $<$<CONFIG:DEBUG>:KAGE_DEBUG>
+)
+
+# Compile options
+target_compile_options(${PROJECT_NAME}
+    PRIVATE
+        -Wall
+        -Wextra
+        -Wno-unused-parameter
+)
+
+# Link libraries
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
+        ${SODIUM_LIBRARIES}
+)
+
+# Link directories for sodium (if needed)
+if(SODIUM_LIBRARY_DIRS)
+    target_link_directories(${PROJECT_NAME} PRIVATE ${SODIUM_LIBRARY_DIRS})
+endif()
+
+# macOS: allow unresolved symbols from PHP runtime
+if(APPLE)
+    target_link_options(${PROJECT_NAME} PRIVATE "-undefined" "dynamic_lookup")
+endif()
+
+# --- Installation ---
+
+install(TARGETS ${PROJECT_NAME}
     LIBRARY DESTINATION ${PHP_EXTENSION_DIR}
+    RUNTIME DESTINATION ${PHP_EXTENSION_DIR}
 )
 
-# Create INI file from template
+# Generate INI from template
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/kage.ini.in
     ${CMAKE_BINARY_DIR}/kage.ini
     @ONLY
 )
 
-# Install INI file to PHP INI directory
 install(FILES ${CMAKE_BINARY_DIR}/kage.ini
     DESTINATION ${PHP_INI_DIR}
-) 
+)
+
+# --- Testing (optional) ---
+
+if(BUILD_TESTS)
+    enable_testing()
+    # Add test targets here if needed
+endif()
+
+# --- Summary ---
+
+message(STATUS "PHP extension: ${PROJECT_NAME}")
+message(STATUS "  Extension dir: ${PHP_EXTENSION_DIR}")
+message(STATUS "  INI dir: ${PHP_INI_DIR}")
+message(STATUS "  Include dir: ${PHP_INCLUDE_DIR}")
+message(STATUS "  Sodium: ${SODIUM_LIBRARIES}")
