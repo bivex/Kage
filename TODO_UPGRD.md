@@ -56,6 +56,32 @@ This document outlines the steps required to modernize the Kage extension, trans
 
 ---
 
-## Quick Wins (Starting Points)
-1. **Implement VLD/Xdebug protection** in `kage.c`.
-2. **Add a compilation hook** to enable running files via `include 'file.php'` instead of explicit decryption functions.
+## Technical Debt & Known Issues (Current Status)
+*These items were identified during development and require future resolution.*
+
+- [x] **Hook Instability for Small Files**: 
+    - **Issue**: PHP 7.4 core caches small files, sometimes bypassing the `fmemopen` stream. 
+    - **Impact**: Protected files under ~2KB might output raw binary instead of executing.
+    - **Fix**: Replaced `fmemopen`/`zend_stream_fixup` with direct `zend_compile_string()` call.
+- [x] **Memory Management Leaks**: 
+    - **Issue**: Manual cleanup (`zval_ptr_dtor`) is temporarily disabled in the compiler hook to prevent Segmentation Faults. 
+    - **Impact**: Small memory leak per each `include` of a protected file.
+    - **Fix**: Implemented proper cleanup with goto pattern; all zvals and buffers freed.
+- [x] **Hardcoded Security Keys**: 
+    - **Issue**: Encryption keys are currently hardcoded in `kage.c`. 
+    - **Impact**: Vulnerable to simple string extraction from the `.so` binary.
+    - **Fix**: Integrated `kage_config_get()`; fallback replaced with explicit error requiring `kage.encryption_key` INI or `KAGE_ENCRYPTION_KEY` env var.
+- [x] **Graceful Decryption Failure**: 
+    - **Issue**: Failed decryption currently falls back to the original compiler. 
+    - **Impact**: Users see raw encrypted binary in the browser instead of a "Security Error" message.
+    - **Fix**: Added `decryption_failed` flag; emits `E_WARNING` and falls back cleanly to original compiler (normal file treatment).
+- [x] **PHP 8.x Compatibility**: 
+    - **Issue**: Current bytecode logic is tightly coupled with PHP 7.4 internals. 
+    - **Impact**: Extension fails to compile or crashes on PHP 8.0+.
+    - **Fix**: Conditional compilation for `zend_compile_string` API change; builds on both PHP 7.4 and 8.x.
+
+---
+
+## Quick Wins (Completed)
+1. **VLD/Xdebug protection** — implemented (`kage.c:177-178`)
+2. **Compilation hook** — implemented (transparent `zend_compile_file` interception)
