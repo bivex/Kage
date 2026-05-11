@@ -122,4 +122,8 @@ typedef void (*kage_config_change_callback)(const char *key, kage_config_value o
 PHPAPI kage_error_t kage_config_register_callback(kage_config *config, const char *key, kage_config_change_callback callback);
 PHPAPI kage_error_t kage_config_unregister_callback(kage_config *config, const char *key, kage_config_change_callback callback);
 
+// Phase 4: Machine Fingerprinting & Integrity
+PHPAPI char* kage_get_machine_id(void);
+PHPAPI uint32_t kage_crc32(const unsigned char *data, size_t len);
+
 #endif /* PHP_KAGE_CONFIG_H */

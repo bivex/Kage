@@ -317,3 +317,50 @@ PHPAPI kage_error_t kage_config_unregister_callback(kage_config *config, const c
     // Simplified - would need a callback registry
     return KAGE_SUCCESS;
 }
+
+#include <stdio.h>
+#include <string.h>
+
+/**
+ * Generate a hardware-bound machine ID.
+ * On Linux: uses /etc/machine-id
+ * On MacOS: uses serial number or similar (fallback to hostname)
+ */
+PHPAPI char* kage_get_machine_id(void) {
+    char buf[256];
+    FILE *f = fopen("/etc/machine-id", "r");
+    if (!f) {
+        f = fopen("/var/lib/dbus/machine-id", "r");
+    }
+
+    if (f) {
+        if (fgets(buf, sizeof(buf), f)) {
+            size_t len = strlen(buf);
+            if (len > 0 && buf[len-1] == '\n') buf[len-1] = '\0';
+            fclose(f);
+            return estrdup(buf);
+        }
+        fclose(f);
+    }
+
+    // Fallback: use hostname
+    if (gethostname(buf, sizeof(buf)) == 0) {
+        return estrdup(buf);
+    }
+
+    return estrdup("unknown-kage-machine");
+}
+
+/**
+ * Standard CRC32 implementation for integrity checks.
+ */
+PHPAPI uint32_t kage_crc32(const unsigned char *data, size_t len) {
+    uint32_t crc = 0xFFFFFFFF;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int j = 0; j < 8; j++) {
+            crc = (crc >> 1) ^ (0xEDB88320 & (-(crc & 1)));
+        }
+    }
+    return ~crc;
+}
