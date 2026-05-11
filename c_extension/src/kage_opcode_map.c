@@ -8,9 +8,9 @@
 #include <zend_execute.h>
 #include <zend_vm_opcodes.h>
 #include "kage_opcode_map.h"
+#include <sodium.h>
 #include <stdlib.h>
 #include <string.h>
-
 // Global mapping tables
 unsigned char g_kage_opcode_map[256];
 unsigned char g_kage_reverse_map[256];
@@ -36,13 +36,13 @@ static void kage_shuffle_opcode_map(void) {
     }
 
     unsigned char shuffled[256];
-    memcpy(shuffled, valid, count * sizeof(unsigned char));
-    for (int i = count - 1; i > 0; i--) {
-        unsigned int j = arc4random_uniform(i + 1);
-        unsigned char tmp = shuffled[i];
-        shuffled[i] = shuffled[j];
-        shuffled[j] = tmp;
-    }
+     memcpy(shuffled, valid, count * sizeof(unsigned char));
+     for (int i = count - 1; i > 0; i--) {
+         unsigned int j = randombytes_uniform(i + 1);
+         unsigned char tmp = shuffled[i];
+         shuffled[i] = shuffled[j];
+         shuffled[j] = tmp;
+     }
 
     for (int i = 0; i < count; i++) {
         unsigned char real = valid[i];
