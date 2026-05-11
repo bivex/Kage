@@ -10,15 +10,12 @@ putenv("KAGE_ENCRYPTION_KEY=" . $key);
 
 echo "=== KAGE PHASE 2: COMPILER HOOK TEST SUITE ===\n\n";
 
-// Helper to create a Kage file
-function create_kage_file($filename, $code, $key) {
-    $encrypted_base64 = kage_encrypt_c($code, $key);
-    $encrypted_binary = base64_decode($encrypted_base64);
-    $handle = fopen($filename, "wb");
-    fwrite($handle, "KAGE");
-    fwrite($handle, $encrypted_binary);
-    fclose($handle);
-}
+ // Helper to create a Kage file
+ function create_kage_file($filename, $code, $key) {
+     $encrypted_base64 = kage_encrypt_c($code, $key);
+     $encrypted_binary = base64_decode($encrypted_base64);
+     file_put_contents($filename, $encrypted_binary);
+ }
 
 // --- Test 1: Normal PHP File ---
 echo "Test 1: Normal PHP file include... ";

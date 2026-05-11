@@ -37,11 +37,10 @@ CMD export KAGE_ENCRYPTION_KEY="0123456789abcdef0123456789abcdef" ; \
         \$key = '0123456789abcdef0123456789abcdef'; \
         \$code = '<?php echo \"[VMP] Protected function execution SUCCESS\\n\"; ?>'; \
         \$enc = kage_encrypt_c(\$code, \$key); \
-        file_put_contents('test.kage', 'KAGE' . base64_decode(\$enc)); \
+        file_put_contents('test.kage', base64_decode(\$enc)); \
         include 'test.kage'; \
     "
 EOF
-
 docker build -t kage-verify-vmp -f Dockerfile.verify .
 docker run --rm kage-verify-vmp
 rm Dockerfile.verify

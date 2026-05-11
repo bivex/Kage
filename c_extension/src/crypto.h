@@ -22,9 +22,9 @@ typedef struct {
     uint32_t payload_len;   // Length of encrypted data
     uint32_t crc32;         // CRC32 of payload for integrity
     char hwid[32];          // Target Machine HWID (if flags & 0x02)
-    uint32_t reserved[3];   // Future use
-} kage_header_t;
-
+    uint32_t seed;          // Dynamic ISA Seed (Phase 6)
+    uint32_t reserved[2];   // Future use
+    } kage_header_t;
 #define KAGE_HEADER_MAGIC   "KAGE"
 #define KAGE_FLAG_LZSS      0x01
 #define KAGE_FLAG_HWID      0x02
@@ -33,7 +33,7 @@ typedef struct {
 // Internal functions
 int kage_internal_encrypt(zval *return_value, zval *data, zend_string *key);
 int kage_internal_decrypt(zval *return_value, zval *encrypted_data, zend_string *key);
-PHPAPI int kage_raw_decrypt(zval *return_value, const unsigned char *data, size_t data_len, zend_string *key);
+PHPAPI int kage_raw_decrypt(zval *return_value, const unsigned char *data, size_t data_len, zend_string *key, uint32_t *out_seed);
 
 // Compression (Phase 5)char* kage_compress_lzss(const char *input, size_t input_len, size_t *output_len);
 char* kage_decompress_lzss(const char *input, size_t input_len, size_t original_len);

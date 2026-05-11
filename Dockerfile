@@ -43,7 +43,7 @@ CMD export KAGE_ENCRYPTION_KEY="0123456789abcdef0123456789abcdef" ; \
         \$key = '0123456789abcdef0123456789abcdef'; \
         \$code = '<?php echo \"SUCCESS: Obfuscated output correct\\n\"; for(\$i=0;\$i<2;\$i++) echo \"Loop \$i\\n\"; ?>'; \
         \$enc = kage_encrypt_c(\$code, \$key); \
-        file_put_contents('docker_test.kage', 'KAGE' . base64_decode(\$enc)); \
+        file_put_contents('docker_test.kage', base64_decode(\$enc)); \
         include 'docker_test.kage'; \
         unlink('docker_test.kage'); \
     " ; \
@@ -55,7 +55,7 @@ CMD export KAGE_ENCRYPTION_KEY="0123456789abcdef0123456789abcdef" ; \
         echo 'Current HWID: ' . \$my_id . PHP_EOL; \
         \$code = '<?php echo \"Authorized Execution\\n\"; ?>'; \
         \$enc = kage_encrypt_c(\$code, \$key, 'wrong-id-123'); \
-        file_put_contents('locked.kage', 'KAGE' . base64_decode(\$enc)); \
+        file_put_contents('locked.kage', base64_decode(\$enc)); \
         echo 'Attempting to run locked file...' . PHP_EOL; \
         try { include 'locked.kage'; } catch (Throwable \$e) { echo 'Caught: ' . \$e->getMessage() . PHP_EOL; } \
         unlink('locked.kage'); \

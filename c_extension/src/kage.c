@@ -50,32 +50,31 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
             if (fread(header, 1, 4, fp) == 4 && memcmp(header, "KAGE", 4) == 0) {
                 is_kage_file = 1;
 
-                 // 1. Read encrypted payload
+                 // 1. Read the entire file (including header)
                  fseek(fp, 0, SEEK_END);
                  size_t file_size = ftell(fp);
-                 fseek(fp, 4, SEEK_SET);
-                 size_t encrypted_len = file_size - 4;
-                 encrypted_buf = emalloc(encrypted_len);
+                 fseek(fp, 0, SEEK_SET);
+                 encrypted_buf = emalloc(file_size);
                  if (!encrypted_buf) goto cleanup;
-
-                 if (fread(encrypted_buf, 1, encrypted_len, fp) != encrypted_len) {
+ 
+                 if (fread(encrypted_buf, 1, file_size, fp) != file_size) {
                      goto cleanup;
                  }
                  fclose(fp);
                  fp = NULL;
-
+ 
                  // Phase 4.1: Integrity Check (CRC32)
-                 uint32_t file_crc = kage_crc32(encrypted_buf, encrypted_len);
+                 uint32_t file_crc = kage_crc32((unsigned char*)encrypted_buf, file_size);
                  // In a real SG-like scenario, we would compare this with a CRC stored in the header.
                  // For now, we use it to ensure the payload is at least readable.
-
+ 
                  // Phase 4.2: Machine Binding (Placeholder)
                  char *mid = kage_get_machine_id();
                  if (mid) {
                      // In Phase 4, we would compare 'mid' with the machine ID embedded in the license/file.
                      efree(mid);
                  }
-
+ 
                 // 2. Get encryption key from configuration (INI > env > fallback)
                 kage_config *config = kage_config_get();
                 const char *key_str = NULL;
@@ -90,13 +89,14 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
                     decryption_failed = 1;
                     goto cleanup;
                 }
-                key = zend_string_init(key_str, 32, 0);
-
-                // 3. Decrypt (raw binary format)
-                if (kage_raw_decrypt(&decrypted_zv, encrypted_buf, encrypted_len, key) != SUCCESS) {
-                    decryption_failed = 1;
-                    goto cleanup;
-                }
+                 key = zend_string_init(key_str, 32, 0);
+ 
+                 // 3. Decrypt (raw binary format)
+                 uint32_t oparray_seed = 0;
+                 if (kage_raw_decrypt(&decrypted_zv, (unsigned char*)encrypted_buf, file_size, key, &oparray_seed) != SUCCESS) {
+                     decryption_failed = 1;
+                     goto cleanup;
+                 }
 
                 // 4. Compile the decrypted PHP code directly (strip <?php ?> tags)
                 char *src = Z_STRVAL(decrypted_zv);
@@ -128,24 +128,9 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
                  op_array = zend_compile_string(code_str, filename);
                  zend_string_release(code_str);
  #endif
-                   // Phase 3.1 & 3.3 & 3.4: Obfuscate bytecode
+                   // Phase 3 & 6: Obfuscate bytecode recursively (Enterprise Grade)
                    if (op_array) {
-                       // 1. Encrypt operands and jump offsets (uses real opcodes)
-                       if (key) {
-                           kage_encrypt_operands(op_array, key);
-                       }
-                       // 2. Transform real opcodes to virtual ones
-                       kage_map_oparray(op_array);
-                       
-                       // 3. Set first opcode to ZEND_NOP carrier (Phase 3.2 Strategy A)
-                       if (op_array->last > 0) {
-                           // Save original virtual opcode to reserved[1] for restoration
-                           op_array->reserved[1] = (void*)(uintptr_t)op_array->opcodes[0].opcode;
-                           op_array->opcodes[0].opcode = 0; // ZEND_NOP
-                       }
-
-                       // Mark this op_array as protected so runtime dispatcher knows to decrypt
-                       op_array->reserved[0] = (void*)1;
+                       kage_protect_recursive(op_array, key, oparray_seed);
                    }
              } else {
                 // Not a Kage-protected file

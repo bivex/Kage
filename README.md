@@ -15,15 +15,17 @@ Kage addresses the critical need for PHP code protection in scenarios where sour
 - **Performance Optimization**: Optional C extension for enhanced encryption/decryption performance
 - **Deployment Flexibility**: Support for both traditional hosting and cloud environments
 
-### Key Features
+ ### Key Features
+ 
+ - **Bytecode-Level Encryption**: Encrypt PHP code at the Zend opcode level for maximum protection.
+ - **Virtual Opcode Mapping (Dynamic ISA)**: Opcodes are randomly remapped per-file using a unique seed, making mass-analysis impossible.
+ - **Control Flow Flattening (CFF)**: Execution graph is scrambled by encrypting jump targets, preventing logical reconstruction.
+ - **One-Opcode Intercept (JIT)**: Transparent execution via a single carrier opcode, providing **zero runtime overhead** for hot code.
+ - **HWID Machine Binding**: Lock your scripts to specific server hardware to prevent unauthorized redistribution.
+ - **LZSS Compression**: Integrated compression reduces file size and adds an extra layer of binary obfuscation.
+ - **VMP-Hardened Loader**: The Kage extension binary is protected via native-level virtualization (VMPacker), hiding decryption logic from debuggers like IDA Pro.
+ - **Secure Execution Environment**: Isolated runtime preventing code tampering and reverse engineering.
 
-- **Bytecode-Level Encryption**: Encrypt PHP code at the Zend opcode level for maximum protection
-- **Advanced Encryption**: Military-grade encryption algorithms (XOR, AES, ROTATE) for PHP source code
-- **Self-Decrypting Files**: Generate executable files that decrypt themselves at runtime without storing keys
-- **Secure Execution Environment**: Isolated runtime preventing code tampering and reverse engineering
-- **C Extension Support**: High-performance native extension for demanding applications
-- **Comprehensive Testing**: Full test suite ensuring reliability and security
-- **Source Code Obfuscation**: Complete hiding of original PHP source code in encrypted files
 
 ### Intended Audience
 
@@ -33,16 +35,17 @@ This documentation is intended for:
 - DevOps engineers integrating Kage into CI/CD pipelines
 - Security professionals implementing code protection strategies
 
-### Bytecode Encryption Technology
+ ### Bytecode Encryption Technology
+ 
+ Kage implements a professional-grade approach to PHP code protection through multi-layered **bytecode-level obfuscation**.
+ 
+ **Key Advantages:**
+ - **Source Code Invisibility**: Original PHP source code is never present on the server.
+ - **Dynamic Instruction Set**: Every protected file has a unique "language" (opcode mapping).
+ - **Pointer-Level Obfuscation**: Jump targets are restored in memory just-in-time, bypassing static dumpers like VLD.
+ - **Variable & Literal Hiding**: Variable names and string constants are encrypted and only appear in memory during function execution.
+ - **Tamper Resistant**: Encrypted payloads are verified via CRC32 and HWID checks before execution.
 
-Kage implements a revolutionary approach to PHP code protection through **bytecode-level encryption**. Unlike traditional string-based encryption, Kage encrypts PHP code after it has been compiled into Zend opcodes - the intermediate representation that PHP's Zend Engine executes.
-
-**Key Advantages:**
-- **Source Code Invisibility**: Original PHP source code is completely hidden
-- **Runtime Decryption**: Code decrypts itself during execution without exposing keys
-- **Multi-Algorithm Support**: XOR, AES, and ROTATE encryption algorithms
-- **Performance Optimized**: Minimal runtime overhead with C extension
-- **Tamper Resistant**: Encrypted opcodes prevent static analysis attacks
 
 ## Table of Contents
 

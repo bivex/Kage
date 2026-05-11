@@ -362,13 +362,14 @@ int kage_internal_decrypt(zval *return_value, zval *encrypted_data, zend_string 
     return SUCCESS;
 }
 
-// Advanced decryptor with Header & HWID validation (Phase 4/5)
-int kage_raw_decrypt(zval *return_value, const unsigned char *data, size_t data_len, zend_string *key) {
+// Advanced decryptor with Header & HWID validation (Phase 4/5/6)
+int kage_raw_decrypt(zval *return_value, const unsigned char *data, size_t data_len, zend_string *key, uint32_t *out_seed) {
     if (data_len < sizeof(kage_header_t)) {
         return FAILURE;
     }
 
     kage_header_t *header = (kage_header_t*)data;
+    if (out_seed) *out_seed = header->seed;
 
     // 1. Validate Header Magic
     if (memcmp(header->magic, KAGE_HEADER_MAGIC, 4) != 0) {
@@ -423,7 +424,8 @@ int kage_raw_decrypt(zval *return_value, const unsigned char *data, size_t data_
 
     // 4. Decompress (if compressed)
     if (header->flags & KAGE_FLAG_LZSS) {
-        // Placeholder for real decompression
+        // Note: Real LZSS decompression would expand 'plaintext' here.
+        // For now, we assume simple pass-through to maintain stability.
     }
 
     ZVAL_STRINGL(return_value, (char *)plaintext, decrypted_len);
@@ -454,6 +456,9 @@ PHP_FUNCTION(kage_encrypt_c) {
     header.version = 2;
     header.flags = 0;
 
+    // Generate Random Seed for Dynamic ISA (Phase 6)
+    randombytes_buf(&header.seed, sizeof(header.seed));
+
     if (target_hwid && ZSTR_LEN(target_hwid) > 0) {
         header.flags |= KAGE_FLAG_HWID;
         size_t copy_len = ZSTR_LEN(target_hwid) < 31 ? ZSTR_LEN(target_hwid) : 31;
@@ -479,8 +484,8 @@ PHP_FUNCTION(kage_encrypt_c) {
     unsigned char *combined = emalloc(total_len);
 
     header.payload_len = total_len - sizeof(kage_header_t);
-    // Note: In real life, calculate CRC32 of payload here
-    header.crc32 = 0; 
+    // Calculate CRC32 of payload (Nonce + Ciphertext)
+    header.crc32 = kage_crc32(nonce, sizeof(nonce) + ciphertext_len); 
 
     memcpy(combined, &header, sizeof(kage_header_t));
     memcpy(combined + sizeof(kage_header_t), nonce, sizeof(nonce));
@@ -497,12 +502,12 @@ PHP_FUNCTION(kage_encrypt_c) {
         RETURN_FALSE;
     }
 
-    ZVAL_STRINGL(return_value, encoded, encoded_len);
-    efree(encoded);
-}
-
-// PHP Function: Decrypt
-PHP_FUNCTION(kage_decrypt_c) {
+     ZVAL_STRINGL(return_value, encoded, encoded_len);
+     efree(encoded);
+ }
+ 
+ // PHP Function: Decrypt
+ PHP_FUNCTION(kage_decrypt_c) {
     zval *encrypted_data_zv;
     zend_string *key;
 

@@ -1,0 +1,21 @@
+================================================================
+Translation failure report — kage_global_user_handler @ 0x75C0
+Function size: 528 bytes, total insts: 132, translated: 130
+================================================================
+
+Unsupported instructions (2):
+
+[1] offset 0x01E0: UNSUPPORTED (raw=0x3DC03421) - unsupported instruction type
+    raw bytes: 21 34 C0 3D
+    absolute addr: 0x77A0
+
+[2] offset 0x01E8: UNSUPPORTED (raw=0x3C808281) - unsupported instruction type
+    raw bytes: 81 82 80 3C
+    absolute addr: 0x77A8
+
+================================================================
+Fix suggestions:
+- Write a demo test case for each unsupported insn (see demo/ dir)
+- Add corresponding case in pkg/arch/arm64/translator.go translateOne()
+- Use -v flag to see full disassembly context
+================================================================
