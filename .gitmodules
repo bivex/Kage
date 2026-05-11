@@ -1,0 +1,3 @@
+[submodule "packer/VMPacker"]
+	path = packer/VMPacker
+	url = https://github.com/bivex/VMPacker
