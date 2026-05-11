@@ -8,16 +8,30 @@
 #include "zend_execute.h"
 #include "zend_smart_str.h"
 #include <zend_vm.h>
+#include <zend_vm_opcodes.h>
 #include "kage_opcode_map.h"
+#include "kage_op_defs.h"
 
 static int kage_get_jump_target_operand(unsigned char opcode) {
     switch (opcode) {
-        case 42: return 1;
-        case 43: case 44: case 45: case 46:
-        case 77: case 78: case 152: case 153:
-        case 154: case 164: case 165: return 2;
-        case 107: return 3;
-        default: return 0;
+        case ZEND_JMP:
+            return 1;
+        case ZEND_JMPZ:
+        case ZEND_JMPNZ:
+        case ZEND_JMPZNZ:
+        case ZEND_JMPZ_EX:
+        case ZEND_FE_RESET_R:
+        case ZEND_FE_FETCH_R:
+        case ZEND_COALESCE:
+        case ZEND_ASSERT_CHECK:
+        case ZEND_JMP_SET:
+        case 164:
+        case 165:
+            return 2;
+        case ZEND_CATCH:
+            return 3;
+        default:
+            return 0;
     }
 }
 
