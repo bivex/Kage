@@ -403,6 +403,9 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_kage_decrypt_bytecode, 0, 0, 2)
     ZEND_ARG_INFO(0, config)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO_EX(arginfo_kage_get_machine_id, 0, 0, 0)
+ZEND_END_ARG_INFO()
+
 // Forward declarations for functions
 PHP_FUNCTION(kage_encrypt_bytecode);
 PHP_FUNCTION(kage_decrypt_bytecode);
@@ -411,8 +414,10 @@ PHP_FUNCTION(kage_decrypt_bytecode);
 const zend_function_entry kage_functions[] = {
     PHP_FE(kage_encrypt_c, arginfo_kage_encrypt_c)
     PHP_FE(kage_decrypt_c, arginfo_kage_decrypt_c)
+    PHP_FE(kage_get_machine_id, arginfo_kage_get_machine_id)
     PHP_FE(kage_vm_encrypt, arginfo_kage_vm_encrypt)
     PHP_FE(kage_vm_decrypt, arginfo_kage_vm_decrypt)
+
     PHP_FE(kage_ast_parse, arginfo_kage_ast_parse)
     PHP_FE(kage_ast_to_bytecode, arginfo_kage_ast_to_bytecode)
     // PHP_FE(kage_extract_php_bytecode, arginfo_kage_extract_php_bytecode)
