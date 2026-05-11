@@ -10,13 +10,14 @@
 #include "vm.h"
 #include "crypto.h"
 #include "base64.h"
+#include "kage_memory.h"
 
 // Initialize VM state
 PHPAPI int kage_vm_init(kage_vm_state *state, size_t stack_size) {
     state->stack = ecalloc(stack_size, sizeof(zval));
     state->stack_size = 0;  // Current stack size
     state->stack_ptr = 0;   // Stack pointer
-    state->variables = emalloc(sizeof(HashTable));
+    state->variables = KAGE_ALLOC(sizeof(HashTable));
     zend_hash_init(state->variables, 8, NULL, ZVAL_PTR_DTOR, 0);
     state->instructions = NULL;
     state->instruction_count = 0;
@@ -155,7 +156,7 @@ PHP_FUNCTION(kage_vm_encrypt) {
     state.key = key;
     
     // Create instructions
-    state.instructions = emalloc(2 * sizeof(kage_instruction));
+    state.instructions = KAGE_ALLOC(2 * sizeof(kage_instruction));
     if (state.instructions == NULL) {
         kage_vm_destroy(&state);
         RETURN_FALSE;
@@ -199,7 +200,7 @@ PHP_FUNCTION(kage_vm_decrypt) {
     state.key = key;
     
     // Create instructions
-    state.instructions = emalloc(2 * sizeof(kage_instruction));
+    state.instructions = KAGE_ALLOC(2 * sizeof(kage_instruction));
     if (state.instructions == NULL) {
         kage_vm_destroy(&state);
         RETURN_FALSE;

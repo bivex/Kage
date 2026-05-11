@@ -15,6 +15,7 @@
 #include "ast.h"
 #include "vm.h"
 #include "base64.h"
+#include "kage_memory.h"
 #include <stdarg.h>
 
 // Global context instance
@@ -22,7 +23,7 @@ static kage_context *global_context = NULL;
 
 // Memory interface implementation
 static void* kage_memory_alloc(size_t size) {
-    return emalloc(size);
+    return KAGE_ALLOC(size);
 }
 
 static void* kage_memory_realloc(void *ptr, size_t size) {
@@ -43,6 +44,9 @@ static kage_memory_interface memory_interface = {
     .free = kage_memory_free,
     .strdup = kage_memory_strdup
 };
+
+// ... (skipping some unchanged code for brevity in replace instruction, but providing full new_string)
+// Actually I must provide the full file or at least the sections I change.
 
 // Crypto interface implementation
 static kage_result_t kage_crypto_encrypt(const unsigned char *data, size_t data_len,
@@ -117,7 +121,7 @@ static kage_result_t kage_crypto_encode_base64(const unsigned char *data, size_t
         return result;
     }
 
-    zval *result_zv = emalloc(sizeof(zval));
+    zval *result_zv = KAGE_ALLOC(sizeof(zval));
     ZVAL_STRINGL(result_zv, encoded, encoded_len);
     efree(encoded);
 
@@ -141,7 +145,7 @@ static kage_result_t kage_crypto_decode_base64(const char *data, size_t data_len
         return result;
     }
 
-    zval *result_zv = emalloc(sizeof(zval));
+    zval *result_zv = KAGE_ALLOC(sizeof(zval));
     ZVAL_STRINGL(result_zv, (char*)decoded, decoded_len);
     efree(decoded);
 
@@ -187,7 +191,7 @@ static kage_result_t kage_ast_convert_to_bytecode(kage_ast_node *node) {
         return result;
     }
 
-    kage_vm_state *state = emalloc(sizeof(kage_vm_state));
+    kage_vm_state *state = KAGE_ALLOC(sizeof(kage_vm_state));
     if (!state) {
         result.error = KAGE_ERROR_MEMORY;
         return result;
@@ -213,7 +217,7 @@ static kage_ast_interface ast_interface = {
 static kage_result_t kage_vm_initialize(size_t stack_size) {
     kage_result_t result = {KAGE_SUCCESS, {NULL}};
 
-    kage_vm_state *state = emalloc(sizeof(kage_vm_state));
+    kage_vm_state *state = KAGE_ALLOC(sizeof(kage_vm_state));
     if (!state) {
         result.error = KAGE_ERROR_MEMORY;
         return result;
@@ -291,7 +295,7 @@ static kage_vm_interface vm_interface = {
 
 // Context management
 PHPAPI kage_context* kage_context_create(void) {
-    kage_context *ctx = emalloc(sizeof(kage_context));
+    kage_context *ctx = KAGE_ALLOC(sizeof(kage_context));
     if (!ctx) {
         return NULL;
     }
@@ -305,7 +309,7 @@ PHPAPI kage_context* kage_context_create(void) {
     ctx->vm = &vm_interface;
 
     // Initialize resource table
-    ctx->resources = emalloc(sizeof(HashTable));
+    ctx->resources = KAGE_ALLOC(sizeof(HashTable));
     if (!ctx->resources) {
         efree(ctx);
         return NULL;
@@ -442,7 +446,7 @@ PHPAPI kage_result_t kage_parse_and_execute(kage_context *ctx, const char *sourc
     }
 
     // Pop result
-    zval *final_result = emalloc(sizeof(zval));
+    zval *final_result = KAGE_ALLOC(sizeof(zval));
     kage_result_t pop_result = ctx->vm->pop(bytecode_result.result.vm_state, final_result);
     if (pop_result.error != KAGE_SUCCESS) {
         efree(final_result);

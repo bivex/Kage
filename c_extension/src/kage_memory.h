@@ -127,6 +127,7 @@ PHPAPI kage_memory_stats* kage_memory_get_stats(void);
 PHPAPI void kage_memory_reset_stats(void);
 
 // Memory-safe wrapper for existing functions
+#define KAGE_ALLOC(size) kage_memory_safe_alloc(size, __FILE__, __LINE__)
 #define kage_safe_emalloc(size) kage_memory_safe_alloc(size, __FILE__, __LINE__)
 #define kage_safe_efree(ptr) kage_memory_safe_free(ptr, __FILE__, __LINE__)
 

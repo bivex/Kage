@@ -10,9 +10,10 @@
 #include "zend_compile.h"
 #include "zend_execute.h"
 #include "zend_smart_str.h"
+#include "kage_memory.h"
 
-char* kage_compress_lzss(const char *i, size_t il, size_t *ol) { *ol=il; char *o=emalloc(il); memcpy(o,i,il); return o; }
-char* kage_decompress_lzss(const char *i, size_t il, size_t rl) { char *o=emalloc(rl+1); memcpy(o,i,il<rl?il:rl); o[rl]='\0'; return o; }
+char* kage_compress_lzss(const char *i, size_t il, size_t *ol) { *ol=il; char *o=KAGE_ALLOC(il); memcpy(o,i,il); return o; }
+char* kage_decompress_lzss(const char *i, size_t il, size_t rl) { char *o=KAGE_ALLOC(rl+1); memcpy(o,i,il<rl?il:rl); o[rl]='\0'; return o; }
 
 int kage_raw_decrypt(zval *rv, const unsigned char *d, size_t dl, zend_string *k, uint32_t *os) {
     if (dl < sizeof(kage_header_t)) return FAILURE;
@@ -34,7 +35,7 @@ int kage_raw_decrypt(zval *rv, const unsigned char *d, size_t dl, zend_string *k
     const unsigned char *pld = d + po;
     if (pl < 40) return FAILURE;
 
-    unsigned char *p = emalloc(pl - 24 - 16 + 1);
+    unsigned char *p = KAGE_ALLOC(pl - 24 - 16 + 1);
     if (crypto_secretbox_open_easy(p, pld + 24, pl - 24, pld, (unsigned char*)ZSTR_VAL(k)) != 0) {
         efree(p); return FAILURE;
     }
@@ -64,11 +65,11 @@ PHP_FUNCTION(kage_encrypt_c) {
     }
 
     unsigned char n[24]; randombytes_buf(n, 24);
-    size_t cl = 16 + Z_STRLEN_P(c); unsigned char *cv = emalloc(cl);
+    size_t cl = 16 + Z_STRLEN_P(c); unsigned char *cv = KAGE_ALLOC(cl);
     crypto_secretbox_easy(cv, (unsigned char*)Z_STRVAL_P(c), Z_STRLEN_P(c), n, (unsigned char*)ZSTR_VAL(k));
     
     size_t tl = sizeof(h) + 24 + cl;
-    unsigned char *cb = emalloc(tl);
+    unsigned char *cb = KAGE_ALLOC(tl);
     h.payload_len = (uint32_t)(24 + cl);
     h.crc32 = kage_crc32(n, 24 + cl);
 

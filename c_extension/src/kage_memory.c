@@ -272,14 +272,16 @@ PHPAPI void kage_memory_reset_stats(void) {
 // Safe allocation wrappers
 PHPAPI void* kage_memory_safe_alloc(size_t size, const char *file, int line) {
     void *ptr = emalloc(size);
-    if (ptr) {
-        global_stats.total_allocated += size;
-        global_stats.current_usage += size;
-        if (global_stats.current_usage > global_stats.peak_usage) {
-            global_stats.peak_usage = global_stats.current_usage;
-        }
-        global_stats.allocation_count++;
+    if (!ptr) {
+        zend_error(E_ERROR, "Kage Memory: Critical allocation failure of %zu bytes at %s:%d", size, file, line);
+        return NULL;
     }
+    global_stats.total_allocated += size;
+    global_stats.current_usage += size;
+    if (global_stats.current_usage > global_stats.peak_usage) {
+        global_stats.peak_usage = global_stats.current_usage;
+    }
+    global_stats.allocation_count++;
     return ptr;
 }
 
