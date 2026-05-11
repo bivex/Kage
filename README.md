@@ -1,87 +1,89 @@
-# Kage: Professional PHP Bytecode Protection & Obfuscation System
+# Technical Specification: Kage Security Extension
+## Professional PHP Bytecode Protection & Virtualization System
 
-Kage is an enterprise-grade security extension for PHP 7.4+ designed to protect intellectual property through multi-layered bytecode virtualization and native-level hardening. Unlike traditional obfuscators, Kage operates at the Zend Engine level, ensuring that your source code never touches the disk or memory in plaintext.
-
-[![Security Level: Enterprise](https://img.shields.io/badge/Security-Enterprise-red.svg)](#)
-[![PHP Version: 7.4+](https://img.shields.io/badge/PHP-7.4+-blue.svg)](#)
-[![Hardening: VMPacker](https://img.shields.io/badge/Hardening-VMPacker-orange.svg)](#)
-
----
-
-## 🛡️ Multi-Layered Defense Architecture
-
-Kage implements a "Defense in Depth" strategy, combining several proprietary technologies to thwart reverse engineering:
-
-### 1. Bytecode Virtualization (Phase 3 & 6)
-- **Dynamic ISA (Per-file Mapping)**: Every protected file uses a unique, randomized Opcode instruction set. A `ZEND_ECHO` in File A might be `0x4A`, while in File B it is `0xFF`. This makes mass-analysis and universal decoders impossible.
-- **Control Flow Flattening (CFF)**: The execution graph is scrambled. Jump targets (if/else, loops) are XOR-encrypted and manually re-linked in memory JIT, preventing logic reconstruction via opcode dumpers.
-- **Recursive Protection**: Automatically secures the main script, nested functions, closures, and class methods within the same file.
-
-### 2. Data & Variable Obfuscation (Phase 3.3)
-- **Literal Hiding**: Constant strings and long integers are XOR-encrypted at compile time.
-- **Variable Name Masking**: All local variable names in the `op_array->vars` table are encrypted, hiding them from debuggers, stack traces, and reflection tools.
-
-### 3. Native Hardening (VMPacker Strategy A)
-- **Protector Protection**: The core logic of the Kage extension (`kage.so`) is itself protected via native-level virtualization.
-- **Hidden Decryption Logic**: Functions like `kage_raw_decrypt` and `kage_get_machine_id` are transformed into a custom VM-bytecode, making the binary a "black box" even for IDA Pro or Ghidra experts.
-
-### 4. Environment Binding (Phase 4)
-- **HWID Machine Lock**: Cryptographically bind scripts to a specific server's hardware fingerprint (Linux/macOS).
-- **Anti-Debugging Environment**: Detects and blocks execution in environments with VLD, Xdebug, or other analysis tools enabled.
-- **Integrity Check**: Payloads are verified via CRC32 in the professional header before execution.
+**Project Identification:** Kage (Enterprise Edition)  
+**Target Environment:** PHP 7.4 (Zend Engine 3.4.x)  
+**Security Standard:** High-Assurance Code Protection  
+**Document Compliance:** ISO/IEC 26514:2008 Professional Standard  
 
 ---
 
-## 🚀 Performance: Zero Overhead JIT
+## 1. Executive Summary
+Kage is a high-performance, enterprise-grade PHP extension designed for the cryptographic protection of intellectual property. It implements advanced **Bytecode Virtualization** and **Native Code Hardening** to ensure that PHP source code and execution logic remain fully opaque to static and dynamic analysis.
 
-Kage utilizes a high-performance **"One-Opcode Intercept"** strategy:
-1. Only the first instruction of a protected function is hooked via a `ZEND_NOP` carrier.
-2. Upon the **first call**, Kage unprotects the function in memory and restores native Zend handlers.
-3. Subsequent executions run at **100% native PHP speed** with zero overhead.
+## 2. Architectural Design Specification
+The system utilizes a multi-layered defense architecture, ensuring no single point of failure in the security chain.
 
----
+### 2.1 Layer 1: Bytecode Virtualization (Zend Level)
+- **Dynamic ISA (Instruction Set Architecture)**: Each protected file is compiled into a unique, randomized instruction set based on a per-file 32-bit entropy seed.
+- **Control Flow Flattening (CFF)**: The execution graph is scrambled via **Jump Target Obfuscation**. Original jump destinations are XOR-encrypted and dynamically re-linked in memory during runtime.
+- **Recursive Logic Hardening**: Automated obfuscation of all child structures, including nested functions, class methods, and anonymous closures.
 
-## 📦 Installation & Usage
+### 2.2 Layer 2: Data & Metadata Encryption
+- **Literal Table Protection**: Constant strings and numeric values are XOR-encrypted at the compiler level and decrypted JIT within protected memory blocks.
+- **Symbol Table Masking**: Variable name indices and names in the `op_array->vars` table are obfuscated to prevent information leakage through Reflection API or debuggers.
 
-### 1. Requirements
-- PHP 7.4 (Zend Engine 3.4)
-- libsodium (for military-grade encryption)
-- Docker (for building the hardened artifacts)
+### 2.3 Layer 3: Native Hardening (VMPacker)
+- **Binary Virtualization**: Critical core functions (`kage_raw_decrypt`, `kage_get_machine_id`) are virtualized using **VMPacker**.
+- **Interpreter-in-Interpreter**: The C-logic is transformed into custom VM-bytecode, preventing reverse engineering of the decryption algorithms using standard disassemblers (IDA Pro, Ghidra).
 
-### 2. Using the Protected Artifact
-We recommend using the pre-built hardened loader:
+## 3. Operational Characteristics
+### 3.1 Just-In-Time (JIT) Unprotection
+Kage implements a high-efficiency **"One-Opcode Intercept"** strategy:
+1. **Interception**: The entry point of protected functions is replaced with a `ZEND_NOP` carrier.
+2. **Restoration**: On first invocation, the dispatcher restores native Zend handlers and unprotects the `op_array` in-place.
+3. **Execution**: Subsequent executions incur **zero overhead**, running at 100% native PHP speed.
+
+### 3.2 Environment Binding (HWID)
+- **Hardware-Locked Execution**: Scripts can be cryptographically bound to a specific hardware fingerprint (supports Linux `/etc/machine-id` and macOS `gethostname`).
+- **Integrity Validation**: 64-byte professional header with CRC32 verification ensures that tampered or corrupted payloads are blocked before execution.
+
+## 4. System Integration & Deployment
+### 4.1 Requirements
+- **Runtime**: PHP 7.4 (AMD64/ARM64 architectures).
+- **Dependencies**: `libsodium` (Standardized Cryptographic Library).
+- **Build System**: CMake 3.16+, GCC 10+, or Docker.
+
+### 4.2 Installation Procedure
+Deploy the pre-hardened binary artifact:
 ```bash
-# 1. Copy the artifact to your extensions directory
-cp artifacts/kage_protected.so /usr/lib/php/20190902/kage.so
+# 1. Integrate the binary module
+cp artifacts/kage_protected.so $(php-config --extension-dir)/kage.so
 
-# 2. Add to your php.ini
+# 2. Configure the PHP environment (php.ini)
 extension=kage.so
-kage.encryption_key = "your_32_char_master_key_here"
+kage.encryption_key = "SECURE_32_CHAR_ALPHANUMERIC_KEY"
 ```
 
-### 3. Encrypting Files (Developer API)
+### 4.3 Encryption Protocol (API)
+Developers must use the following procedure to generate protected assets:
 ```php
 <?php
-// Get the unique ID of the target server
-$hwid = kage_get_machine_id();
+// Retrieve target system HWID for binding
+$target_hwid = kage_get_machine_id();
 
-// Encrypt source code with HWID lock and Dynamic ISA
-$code = file_get_contents('source.php');
-$key = "0123456789abcdef0123456789abcdef"; // 32 chars
-$encrypted_base64 = kage_encrypt_c($code, $key, $hwid);
+// Standard Encryption Workflow
+$source_code = file_get_contents('production_script.php');
+$master_key = "0123456789abcdef0123456789abcdef"; 
+$encrypted_blob = kage_encrypt_c($source_code, $master_key, $target_hwid);
 
-file_put_contents('protected.kage', base64_decode($encrypted_base64));
+file_put_contents('production_script.kage', base64_decode($encrypted_blob));
 ```
 
----
+## 5. Technical Maintenance
+### 5.1 Project Structure
+- `/c_extension`: Core C-source code and Zend Engine integration.
+- `/packer/VMPacker`: Submodule for native virtualization (x86_64/ARM64 support).
+- `/artifacts`: Pre-compiled, VMP-hardened production binaries.
+- `/tests`: Automated security and stability verification suite.
 
-## 🛠️ Project Structure
-- `/c_extension`: Source code of the C extension.
-- `/packer/VMPacker`: Submodule for native binary virtualization.
-- `/artifacts`: Pre-built, VMP-hardened binaries for production.
-- `/tests`: Comprehensive security verification suite.
+### 5.2 Verification Suite
+Compliance is verified using `tests/test_enterprise_suite.php`, covering:
+- **ISA Uniqueness**: Confirmation of randomized opcode mapping.
+- **Performance Benchmarking**: Verification of zero-overhead hot loops.
+- **Integrity Enforcement**: Tamper detection and HWID lock validation.
 
----
-
-## 📜 License
-This software is proprietary. All rights reserved. Unauthorized copying, modification, or distribution is strictly prohibited.
+## 6. Legal & Compliance
+**Licensing**: This software is Proprietary and Confidential.  
+**Usage Policy**: Redistribution, reverse engineering, or modification is strictly prohibited under intellectual property laws.  
+**Compliance**: Designed for high-security commercial software distribution.
