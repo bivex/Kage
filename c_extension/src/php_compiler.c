@@ -25,10 +25,54 @@ static void php_tokenizer_init(php_tokenizer *tokenizer, const char *source) {
     tokenizer->token_length = 0;
 }
 
+static int handle_variable_token(php_tokenizer *tokenizer) {
+    size_t start = tokenizer->position;
+    tokenizer->position++;
+    while (tokenizer->position < tokenizer->length && 
+           (isalnum((unsigned char)tokenizer->source[tokenizer->position]) || tokenizer->source[tokenizer->position] == '_')) {
+        tokenizer->position++;
+    }
+    tokenizer->token_value = estrndup(tokenizer->source + start, tokenizer->position - start);
+    tokenizer->token_length = tokenizer->position - start;
+    return PHP_NODE_VARIABLE;
+}
+
+static int handle_string_token(php_tokenizer *tokenizer) {
+    size_t start = tokenizer->position;
+    tokenizer->position++;
+    while (tokenizer->position < tokenizer->length && tokenizer->source[tokenizer->position] != '"') {
+        if (tokenizer->source[tokenizer->position] == '\\') {
+            tokenizer->position++; // Skip escaped character
+        }
+        tokenizer->position++;
+    }
+    if (tokenizer->position < tokenizer->length) {
+        tokenizer->position++; // Skip closing quote
+    }
+    tokenizer->token_value = estrndup(tokenizer->source + start, tokenizer->position - start);
+    tokenizer->token_length = tokenizer->position - start;
+    return PHP_NODE_STRING;
+}
+
+static int handle_keyword_token(php_tokenizer *tokenizer) {
+    if (tokenizer->position + 4 <= tokenizer->length && 
+        strncmp(tokenizer->source + tokenizer->position, "echo", 4) == 0) {
+        tokenizer->position += 4;
+        return PHP_NODE_ECHO_STATEMENT;
+    }
+    
+    if (tokenizer->position + 6 <= tokenizer->length && 
+        strncmp(tokenizer->source + tokenizer->position, "return", 6) == 0) {
+        tokenizer->position += 6;
+        return PHP_NODE_RETURN_STATEMENT;
+    }
+    return -1;
+}
+
 static int php_tokenizer_next(php_tokenizer *tokenizer) {
     // Skip whitespace
     while (tokenizer->position < tokenizer->length && 
-           isspace(tokenizer->source[tokenizer->position])) {
+           isspace((unsigned char)tokenizer->source[tokenizer->position])) {
         tokenizer->position++;
     }
     
@@ -38,54 +82,22 @@ static int php_tokenizer_next(php_tokenizer *tokenizer) {
     
     char c = tokenizer->source[tokenizer->position];
     
-    // Simple token recognition
     if (c == '$') {
-        // Variable
-        size_t start = tokenizer->position;
-        tokenizer->position++;
-        while (tokenizer->position < tokenizer->length && 
-               (isalnum(tokenizer->source[tokenizer->position]) || tokenizer->source[tokenizer->position] == '_')) {
-            tokenizer->position++;
-        }
-        tokenizer->token_value = estrndup(tokenizer->source + start, tokenizer->position - start);
-        tokenizer->token_length = tokenizer->position - start;
-        return PHP_NODE_VARIABLE;
+        return handle_variable_token(tokenizer);
+    }
+    
+    if (c == '"') {
+        return handle_string_token(tokenizer);
     }
     
     if (c == '=' && tokenizer->position + 1 < tokenizer->length && tokenizer->source[tokenizer->position + 1] == '=') {
         tokenizer->position += 2;
         return PHP_OP_ASSIGN;
     }
-    
-    if (c == '"') {
-        // String literal
-        size_t start = tokenizer->position;
-        tokenizer->position++;
-        while (tokenizer->position < tokenizer->length && tokenizer->source[tokenizer->position] != '"') {
-            if (tokenizer->source[tokenizer->position] == '\\') {
-                tokenizer->position++; // Skip escaped character
-            }
-            tokenizer->position++;
-        }
-        if (tokenizer->position < tokenizer->length) {
-            tokenizer->position++; // Skip closing quote
-        }
-        tokenizer->token_value = estrndup(tokenizer->source + start, tokenizer->position - start);
-        tokenizer->token_length = tokenizer->position - start;
-        return PHP_NODE_STRING;
-    }
-    
-    // Keywords
-    if (tokenizer->position + 4 < tokenizer->length && 
-        strncmp(tokenizer->source + tokenizer->position, "echo", 4) == 0) {
-        tokenizer->position += 4;
-        return PHP_NODE_ECHO_STATEMENT;
-    }
-    
-    if (tokenizer->position + 6 < tokenizer->length && 
-        strncmp(tokenizer->source + tokenizer->position, "return", 6) == 0) {
-        tokenizer->position += 6;
-        return PHP_NODE_RETURN_STATEMENT;
+
+    int keyword_token = handle_keyword_token(tokenizer);
+    if (keyword_token != -1) {
+        return keyword_token;
     }
     
     return -1; // Unknown token
