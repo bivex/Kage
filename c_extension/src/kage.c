@@ -10,6 +10,7 @@
 #include "kage_config.h"
 #include "bytecode_crypto.h"
 #include "kage_opcode_map.h"
+#include "kage_memory.h"
 #include "zend_smart_str.h"
 #include "zend_vm.h"
 #include "crypto.h"
@@ -37,7 +38,7 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
                 fseek(fp, 0, SEEK_END);
                 size_t file_size = ftell(fp);
                 fseek(fp, 0, SEEK_SET);
-                encrypted_buf = emalloc(file_size);
+                encrypted_buf = KAGE_ALLOC(file_size);
                 if (fread(encrypted_buf, 1, file_size, fp) != file_size) {
                     goto cleanup;
                 }
@@ -127,7 +128,7 @@ static void php_kage_init_globals(zend_kage_globals *kage_globals) {
 
 PHP_MINIT_FUNCTION(kage) {
     ZEND_INIT_MODULE_GLOBALS(kage, php_kage_init_globals, NULL);
-    kage_opcode_map_init();
+    kage_opcode_map_init(kage_get_context());
     
     // REDIRECTION FOR ALL OPCODES (0-255)
     for (int i = 0; i < 256; i++) {

@@ -84,7 +84,7 @@ typedef struct {
 } kage_vm_interface;
 
 // Main context structure that holds all interfaces
-typedef struct {
+typedef struct kage_context_s {
     // Configuration
     zend_string *encryption_key;
     size_t max_memory;
@@ -103,6 +103,11 @@ typedef struct {
 
     // Resource management
     HashTable *resources;
+
+    // Opcode mapping (Phase 4 Refactoring)
+    unsigned char opcode_map[256];
+    unsigned char reverse_map[256];
+    int map_initialized;
 } kage_context;
 
 // Global context accessor and context management functions
