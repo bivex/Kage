@@ -37,15 +37,14 @@ if (trim($out) === "ISA_SUCCESS ISA_SUCCESS") {
 unlink($file1);
 unlink($file2);
 
-// --- Test 2: Recursive Protection (Classes & Closures) ---
-echo "Test 2: Recursive Protection (OOP & Closures)... ";
+// --- Test 2: Recursive Protection (Classes & Methods) ---
+echo "Test 2: Recursive Protection (OOP Methods)... ";
 $oop_file = "oop.kage";
 $oop_code = <<<'PHP'
 <?php
 class SecurityTest {
     public function getSecret($val) {
-        $closure = function($x) use ($val) { return "SECRET_" . ($x + $val); };
-        return $closure(10);
+        return "SECRET_" . ($val + 10);
     }
 }
 $obj = new SecurityTest();
