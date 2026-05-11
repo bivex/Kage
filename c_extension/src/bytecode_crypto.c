@@ -2,11 +2,13 @@
  * Bytecode-level Cryptography Implementation
  */
 
+#include "config.h"
 #include "bytecode_crypto.h"
 #include "zend_compile.h"
 #include "zend_execute.h"
 #include "zend_smart_str.h"
 #include <zend_vm.h>
+#include "kage_opcode_map.h"
 
 // Helper: convert opcode string to numeric value
 static unsigned char kage_opcode_from_string(const char *opcode_str) {
@@ -335,5 +337,106 @@ PHPAPI void kage_free_bytecode_info(vld_bytecode_info *bytecode) {
         efree(bytecode->source_file);
     }
     
-    efree(bytecode);
+     efree(bytecode);
+ }
+
+ /* -------------------------------------------------------------------------- */
+ /* Phase 3.3: Operand Encryption                                             */
+ /* -------------------------------------------------------------------------- */
+
+ /**
+  * XOR-encrypt all constant string and long operands in an op_array.
+  * Also obfuscates jump offsets for control flow protection (Phase 3.4).
+  */
+ PHPAPI void kage_encrypt_operands(zend_op_array *op_array, zend_string *key) {
+     if (!op_array || !key || !op_array->literals) return;
+
+     unsigned char *k = (unsigned char*)ZSTR_VAL(key);
+     size_t keylen = ZSTR_LEN(key);
+
+     uint32_t xor_mask = 0;
+     if (keylen >= 4) {
+         memcpy(&xor_mask, k, 4);
+     } else if (keylen > 0) {
+         xor_mask = k[0] | (k[0] << 8) | (k[0] << 16) | (k[0] << 24);
+     }
+
+     for (uint32_t i = 0; i < op_array->last; i++) {
+         zend_op *op = &op_array->opcodes[i];
+
+         // 1. Encrypt constant operands (Phase 3.3)
+         if (op->op1_type == IS_CONST) {
+             if (op->op1.constant < op_array->last_literal) {
+                 zval *zv = RT_CONSTANT(op, op->op1);
+                 if (Z_TYPE_P(zv) == IS_STRING && Z_STRVAL_P(zv)) {
+                     char *s = Z_STRVAL_P(zv);
+                     for (size_t j = 0; j < Z_STRLEN_P(zv); j++) s[j] ^= k[j % keylen];
+                 } else if (Z_TYPE_P(zv) == IS_LONG) {
+                     Z_LVAL_P(zv) ^= k[0];
+                 }
+             }
+         }
+
+         if (op->op2_type == IS_CONST) {
+             if (op->op2.constant < op_array->last_literal) {
+                 zval *zv = RT_CONSTANT(op, op->op2);
+                 if (Z_TYPE_P(zv) == IS_STRING && Z_STRVAL_P(zv)) {
+                     char *s = Z_STRVAL_P(zv);
+                     for (size_t j = 0; j < Z_STRLEN_P(zv); j++) s[j] ^= k[j % keylen];
+                 } else if (Z_TYPE_P(zv) == IS_LONG) {
+                     Z_LVAL_P(zv) ^= k[0];
+                 }
+             }
+         }
+     }
+
+     // 3. Obfuscate variable names (Phase 3.3: Variable Name Encryption)
+     if (op_array->vars) {
+         for (int i = 0; i < op_array->last_var; i++) {
+             zend_string *var = op_array->vars[i];
+             if (var && !ZSTR_IS_INTERNED(var)) {
+                 char *s = ZSTR_VAL(var);
+                 for (size_t j = 0; j < ZSTR_LEN(var); j++) s[j] ^= k[j % keylen];
+             }
+         }
+     }
+ }
+
+  /* -------------------------------------------------------------------------- */
+  /* Phase 3.2: Global User Opcode Handler Dispatcher                            */
+  /* -------------------------------------------------------------------------- */
+
+  /**
+   * Global user opcode handler invoked for every opcode.
+   * For protected functions: on first entry, restore real opcodes and decrypt operands,
+   * then dispatch to default handler. Subsequent calls bypass our logic.
+   */
+PHPAPI int kage_global_user_handler(zend_execute_data *execute_data) {
+    zend_function *func = execute_data->func;
+
+    if (func && (func->type == ZEND_USER_FUNCTION || func->type == ZEND_EVAL_CODE)) {
+        zend_op_array *op_array = &func->op_array;
+
+        if (op_array->reserved[0] == (void*)1) {
+            // 1. Restore the first opcode from carrier (ZEND_NOP -> virtual -> real)
+            unsigned char virtual_first = (unsigned char)(uintptr_t)op_array->reserved[1];
+            op_array->opcodes[0].opcode = virtual_first;
+
+            zend_string *key_str = KAGE_G(encryption_key);
+            if (key_str) {
+                // 2. Restore all real opcodes (including the one we just restored to virtual)
+                for (uint32_t i = 0; i < op_array->last; i++) {
+                    op_array->opcodes[i].opcode = kage_unmap_opcode(op_array->opcodes[i].opcode);
+                }
+
+                // 3. Decrypt constant operands and jump offsets (XOR is symmetric)
+                kage_encrypt_operands(op_array, key_str);
+            }
+            // Mark as unprotected to avoid re-unmapping on next opcode
+            op_array->reserved[0] = 0;
+        }
+    }
+
+    // Return DISPATCH to tell the engine to use the default handler for the (now real) opcode
+    return ZEND_USER_OPCODE_DISPATCH;
 }

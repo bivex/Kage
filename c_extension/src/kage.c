@@ -116,10 +116,25 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
                  op_array = zend_compile_string(code_str, filename);
                  zend_string_release(code_str);
  #endif
-                 // Phase 3.1: Apply virtual opcode mapping to transform bytecode
-                 if (op_array) {
-                     kage_map_oparray(op_array);
-                 }
+                   // Phase 3.1 & 3.3 & 3.4: Obfuscate bytecode
+                   if (op_array) {
+                       // 1. Encrypt operands and jump offsets (uses real opcodes)
+                       if (key) {
+                           kage_encrypt_operands(op_array, key);
+                       }
+                       // 2. Transform real opcodes to virtual ones
+                       kage_map_oparray(op_array);
+                       
+                       // 3. Set first opcode to ZEND_NOP carrier (Phase 3.2 Strategy A)
+                       if (op_array->last > 0) {
+                           // Save original virtual opcode to reserved[1] for restoration
+                           op_array->reserved[1] = (void*)(uintptr_t)op_array->opcodes[0].opcode;
+                           op_array->opcodes[0].opcode = 0; // ZEND_NOP
+                       }
+
+                       // Mark this op_array as protected so runtime dispatcher knows to decrypt
+                       op_array->reserved[0] = (void*)1;
+                   }
              } else {
                 // Not a Kage-protected file
                 if (fp) {
@@ -217,7 +232,18 @@ PHP_MINIT_FUNCTION(kage)
      kage_config_load_from_env(config);
      kage_config_load_from_php_ini(config);
 
-     // Register AST resource type
+     // Cache encryption key in module globals for runtime dispatcher
+     const char *key_str = kage_config_get_string(config, KAGE_CONFIG_ENCRYPTION_KEY);
+     if (!key_str) {
+         key_str = getenv("KAGE_ENCRYPTION_KEY");
+     }
+     if (key_str) {
+         KAGE_G(encryption_key) = zend_string_init(key_str, 32, 0);
+     } else {
+         KAGE_G(encryption_key) = NULL;
+     }
+
+      // Register AST resource type
     le_kage_ast = zend_register_list_destructors_ex(
         kage_ast_dtor, NULL, "Kage AST", module_number
     );
@@ -225,42 +251,52 @@ PHP_MINIT_FUNCTION(kage)
      // Register constants
      REGISTER_STRING_CONSTANT("KAGE_VERSION", PHP_KAGE_VERSION, CONST_CS | CONST_PERSISTENT);
 
-     // Phase 3.1: Initialize opcode mapping
-     if (kage_opcode_map_init() != SUCCESS) {
-         zend_error(E_WARNING, "Kage: Opcode map initialization failed");
-         return FAILURE;
-     }
+      // Phase 3.1: Initialize opcode mapping
+      if (kage_opcode_map_init() != SUCCESS) {
+          zend_error(E_WARNING, "Kage: Opcode map initialization failed");
+          return FAILURE;
+      }
 
-     // Phase 2: Register compiler hook
-    original_compile_file = zend_compile_file;
-    zend_compile_file = kage_compile_file;
+      // Phase 3.2: Register catch-all handler for ZEND_NOP (Strategy A)
+      // We use ZEND_NOP as a carrier to intercept the first execution of a function.
+      zend_set_user_opcode_handler(0, kage_global_user_handler); // 0 is ZEND_NOP
+
+      // Phase 2: Register compiler hook
+      original_compile_file = zend_compile_file;
+      zend_compile_file = kage_compile_file;
 
     return SUCCESS;
 }
 
- PHP_MSHUTDOWN_FUNCTION(kage)
- {
+PHP_MSHUTDOWN_FUNCTION(kage)
+{
      // Restore original compiler hook
      zend_compile_file = original_compile_file;
 
-     // Clean up context system
-     kage_context *ctx = kage_get_context();
-     if (ctx) {
-         kage_context_destroy(ctx);
-     }
+      // Clean up context system
+      kage_context *ctx = kage_get_context();
+      if (ctx) {
+          kage_context_destroy(ctx);
+      }
 
-     // Clean up configuration system
-     kage_config *config = kage_config_get();
-     if (config) {
-         kage_config_destroy(config);
-     }
+      // Clean up configuration system
+      kage_config *config = kage_config_get();
+      if (config) {
+          kage_config_destroy(config);
+      }
 
-     // Phase 3.1: Cleanup opcode mapping
-     kage_opcode_map_shutdown();
+      // Phase 3.1: Cleanup opcode mapping
+      kage_opcode_map_shutdown();
 
-     UNREGISTER_INI_ENTRIES();
-     return SUCCESS;
- }
+      // Phase 3.2/3.3: Release cached encryption key
+      if (KAGE_G(encryption_key)) {
+          zend_string_release(KAGE_G(encryption_key));
+          KAGE_G(encryption_key) = NULL;
+      }
+
+      UNREGISTER_INI_ENTRIES();
+      return SUCCESS;
+  }
 
 PHP_RINIT_FUNCTION(kage)
 {
