@@ -3,14 +3,15 @@
  * Phase 3.1: Bytecode Transformation
  */
 
-#ifndef PHP_KAGE_OPCODE_MAP_H
-#define PHP_KAGE_OPCODE_MAP_H
-
-#include <stdint.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+ #ifndef PHP_KAGE_OPCODE_MAP_H
+ #define PHP_KAGE_OPCODE_MAP_H
+ 
+ #include <stdint.h>
+ #include <zend_execute.h>  // for user_opcode_handler_t
+ 
+ #ifdef __cplusplus
+ extern "C" {
+ #endif
 
 /* Forward declarations */
 struct _zend_op_array;
@@ -37,17 +38,19 @@ static inline unsigned char kage_map_opcode(unsigned char real_opcode) {
     return g_kage_opcode_map[real_opcode];
 }
 
-/**
- * Inline: reverse map virtual → real
- */
-static inline unsigned char kage_unmap_opcode(unsigned char virtual_opcode) {
-    return g_kage_reverse_map[virtual_opcode];
-}
+  /**
+   * Inline: reverse map virtual → real
+   */
+  static inline unsigned char kage_unmap_opcode(unsigned char virtual_opcode) {
+      return g_kage_reverse_map[virtual_opcode];
+  }
 
-/**
- * Transform entire op_array by replacing opcodes with virtual mappings.
- */
-void kage_map_oparray(zend_op_array *op_array);
+  /**
+   * Transform entire op_array by replacing opcodes with virtual mappings.
+   */
+  void kage_map_oparray(zend_op_array *op_array);
+
+
 
 #ifdef __cplusplus
 }
