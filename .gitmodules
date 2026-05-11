@@ -1,4 +1,4 @@
 [submodule "packer/VMPacker"]
 	path = packer/VMPacker
 	url = https://github.com/bivex/VMPacker
-	branch = main
+	branch = master
