@@ -1,0 +1,13 @@
+version: '3'
+services:
+   kage-web:
+    build: 
+      context: ..
+      dockerfile: web_demo/Dockerfile
+    ports:
+      - "8888:80"
+    environment:
+      - KAGE_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
+    volumes:
+      - ./dist:/var/www/html
+    restart: always

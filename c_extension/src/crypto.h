@@ -14,7 +14,7 @@
 #include <stdint.h>
 
 // KAGE File Header (Professional Grade)
-// Total size: 64 bytes
+// Total size: 96 bytes (aligned)
 typedef struct {
     char magic[4];          // "KAGE"
     uint32_t version;       // Format version (2)
@@ -22,7 +22,7 @@ typedef struct {
     uint32_t payload_len;   // Length of encrypted data
     uint32_t crc32;         // CRC32 of payload
     char hwid[32];          // Target Machine HWID
-    char domain[32];        // Target Domain (Phase 4.1)
+    char domain[32];        // Target Domain
     uint32_t seed;          // Dynamic ISA Seed
     uint32_t reserved[2];   // Future use
 } kage_header_t;
@@ -37,31 +37,12 @@ int kage_internal_encrypt(zval *return_value, zval *data, zend_string *key);
 int kage_internal_decrypt(zval *return_value, zval *encrypted_data, zend_string *key);
 PHPAPI int kage_raw_decrypt(zval *return_value, const unsigned char *data, size_t data_len, zend_string *key, uint32_t *out_seed);
 
-
-// Compression (Phase 5)char* kage_compress_lzss(const char *input, size_t input_len, size_t *output_len);
+// Compression (Phase 5)
+char* kage_compress_lzss(const char *input, size_t input_len, size_t *output_len);
 char* kage_decompress_lzss(const char *input, size_t input_len, size_t original_len);
 
-/**
- * Encrypts data using libsodium's crypto_secretbox_easy
-
- * @param data_str Input data to encrypt
- * @param key_str Encryption key
- * @return Base64 encoded (nonce + ciphertext) or FALSE on failure
- */
 PHP_FUNCTION(kage_encrypt_c);
+PHP_FUNCTION(kage_decrypt_c);
+PHP_FUNCTION(kage_get_machine_id);
 
-/**
- * Decrypts data using libsodium's crypto_secretbox_open_easy
- * @param encrypted_data_base64_str Base64 encoded (nonce + ciphertext)
- * @param key_str Decryption key
- * @return Decrypted plaintext or FALSE on failure
- */
- PHP_FUNCTION(kage_decrypt_c);
-
- /**
- * Returns the unique hardware ID of the current machine.
- * @return string Machine ID
- */
- PHP_FUNCTION(kage_get_machine_id);
-
- #endif /* PHP_KAGE_CRYPTO_H */
+#endif /* PHP_KAGE_CRYPTO_H */

@@ -76,8 +76,9 @@ PHPAPI zval* kage_decrypt_operand(zval *operand, const char *key, size_t offset)
  PHPAPI char* kage_serialize_bytecode(const vld_bytecode_info *bytecode);
  PHPAPI vld_bytecode_info* kage_unserialize_bytecode(const char *serialized);
 
-   // Phase 3: operand encryption and custom opcode dispatcher
+    // Phase 3: operand encryption and custom opcode dispatcher
    PHPAPI int kage_global_user_handler(zend_execute_data *execute_data);
    PHPAPI void kage_encrypt_operands(zend_op_array *op_array, zend_string *key);
+   PHPAPI void kage_protect_recursive(zend_op_array *op_array, zend_string *key, uint32_t seed);
 
  #endif /* PHP_KAGE_BYTECODE_CRYPTO_H */

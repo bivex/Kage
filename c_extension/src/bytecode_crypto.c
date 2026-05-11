@@ -1,5 +1,5 @@
 /**
- * Bytecode-level Cryptography Implementation
+ * Bytecode-level Cryptography Implementation (Ultimate Stability Edition)
  */
 
 #include "config.h"
@@ -61,12 +61,12 @@ PHPAPI void kage_encrypt_operands(zend_op_array *op_array, zend_string *key) {
 static void kage_protect_op_array(zend_op_array *op_array, zend_string *key, uint32_t seed) {
     if (!op_array || op_array->type != ZEND_USER_FUNCTION) return;
     if (op_array->reserved[0] == (void*)1) return;
+    
     kage_encrypt_operands(op_array, key);
     kage_map_oparray_seeded(op_array, seed);
-    if (op_array->last > 0) {
-        op_array->reserved[1] = (void*)(uintptr_t)(op_array->opcodes[0].opcode | ((uint64_t)seed << 8));
-        op_array->opcodes[0].opcode = 0;
-    }
+    
+    // Store seed for dispatcher
+    op_array->reserved[1] = (void*)(uintptr_t)seed;
     op_array->reserved[0] = (void*)1;
 }
 
@@ -75,17 +75,16 @@ PHPAPI void kage_protect_recursive(zend_op_array *op_array, zend_string *key, ui
     zend_string *target = op_array->filename;
     kage_protect_op_array(op_array, key, seed);
 
-    HashTable *ft = CG(function_table), *ct = CG(class_table);
-    if (ft) {
+    if (CG(function_table)) {
         zend_function *f;
-        ZEND_HASH_FOREACH_PTR(ft, f) {
+        ZEND_HASH_FOREACH_PTR(CG(function_table), f) {
             if (f->type == ZEND_USER_FUNCTION && f->op_array.filename && zend_string_equals(f->op_array.filename, target))
                 kage_protect_op_array(&f->op_array, key, seed);
         } ZEND_HASH_FOREACH_END();
     }
-    if (ct) {
+    if (CG(class_table)) {
         zend_class_entry *ce;
-        ZEND_HASH_FOREACH_PTR(ct, ce) {
+        ZEND_HASH_FOREACH_PTR(CG(class_table), ce) {
             if (ce->type == ZEND_USER_CLASS && ce->info.user.filename && zend_string_equals(ce->info.user.filename, target)) {
                 zend_function *m;
                 ZEND_HASH_FOREACH_PTR(&ce->function_table, m) {
@@ -96,25 +95,30 @@ PHPAPI void kage_protect_recursive(zend_op_array *op_array, zend_string *key, ui
     }
 }
 
-// LZSS Stub
-static void kage_lzss_decompress(const unsigned char *i, size_t il, unsigned char *o, size_t ol) { memcpy(o, i, il < ol ? il : ol); }
-
-__attribute__((optimize("O1")))
+// Global user opcode handler (Intercepts every opcode execution)
 PHPAPI int kage_global_user_handler(zend_execute_data *execute_data) {
     zend_function *func = execute_data->func;
     if (func && (func->type == ZEND_USER_FUNCTION || func->type == ZEND_EVAL_CODE)) {
         zend_op_array *op_array = &func->op_array;
+        
+        // Fast path: most calls will skip this
         if (op_array->reserved && op_array->reserved[0] == (void*)1) {
-            uintptr_t packed = (uintptr_t)op_array->reserved[1];
-            uint32_t seed = (uint32_t)(packed >> 8);
-            op_array->reserved[0] = 0;
-            op_array->opcodes[0].opcode = (unsigned char)(packed & 0xFF);
+            uint32_t seed = (uint32_t)(uintptr_t)op_array->reserved[1];
+            op_array->reserved[0] = 0; // Unmark
+            
             zend_string *key = KAGE_G(encryption_key);
-            int rel = 0;
-            if (!key) { char *e = getenv("KAGE_ENCRYPTION_KEY"); if (e) { key = zend_string_init(e, 32, 0); rel = 1; } }
+            if (!key) {
+                char *e = getenv("KAGE_ENCRYPTION_KEY");
+                if (e) key = zend_string_init(e, 32, 0);
+            }
+
             if (key) {
-                unsigned char m[256], r[256]; kage_build_map_seeded(m, r, seed);
-                for (uint32_t i = 0; i < op_array->last; i++) op_array->opcodes[i].opcode = r[op_array->opcodes[i].opcode];
+                unsigned char m[256], r[256];
+                kage_build_map_seeded(m, r, seed);
+                for (uint32_t i = 0; i < op_array->last; i++) {
+                    zend_op *op = &op_array->opcodes[i];
+                    op->opcode = r[op->opcode];
+                }
                 kage_encrypt_operands(op_array, key);
                 for (uint32_t i = 0; i < op_array->last; i++) {
                     zend_op *op = &op_array->opcodes[i];
@@ -133,9 +137,12 @@ PHPAPI int kage_global_user_handler(zend_execute_data *execute_data) {
 #endif
                     }}
                 }
-                if (rel) zend_string_release(key);
+                // Cleanup temp key if created
+                if (key != KAGE_G(encryption_key)) zend_string_release(key);
             }
         }
     }
+    
+    // Return DISPATCH to use native handler for the current opcode
     return ZEND_USER_OPCODE_DISPATCH;
 }
