@@ -106,9 +106,10 @@ echo "Test 4: Integrity Check (Tamper Detection)... ";
 $tamper_file = "tamper.kage";
 create_kage($tamper_file, "<?php echo 'OK'; ?>", $key);
 
-// Corrupt the payload (after header)
+// Corrupt the ciphertext (past header+nonce at offset 120)
 $data = file_get_contents($tamper_file);
-$data[70] = chr(ord($data[70]) ^ 0xFF); 
+$corrupt_offset = min(120, strlen($data) - 1);
+$data[$corrupt_offset] = chr(ord($data[$corrupt_offset]) ^ 0xFF);
 file_put_contents($tamper_file, $data);
 
 ob_start();
