@@ -64,7 +64,9 @@ set(SOURCES
     src/crypto.c
     src/base64.c
     src/vm.c
-    src/ast.c
+    src/ast_parser.c
+    src/ast_converter.c
+    src/ast_resource.c
     src/kage_opcode_map.c  # Phase 3.1: virtual opcode mapping
 )
 
