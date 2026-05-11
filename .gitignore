@@ -1,4 +1,5 @@
 # Build artifacts
+artifacts/
 c_extension/build/
 c_extension/artifacts/
 *.so

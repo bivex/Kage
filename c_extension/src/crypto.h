@@ -33,10 +33,9 @@ typedef struct {
 // Internal functions
 int kage_internal_encrypt(zval *return_value, zval *data, zend_string *key);
 int kage_internal_decrypt(zval *return_value, zval *encrypted_data, zend_string *key);
-int kage_raw_decrypt(zval *return_value, const unsigned char *data, size_t data_len, zend_string *key);
+PHPAPI int kage_raw_decrypt(zval *return_value, const unsigned char *data, size_t data_len, zend_string *key);
 
-// Compression (Phase 5)
-char* kage_compress_lzss(const char *input, size_t input_len, size_t *output_len);
+// Compression (Phase 5)char* kage_compress_lzss(const char *input, size_t input_len, size_t *output_len);
 char* kage_decompress_lzss(const char *input, size_t input_len, size_t original_len);
 
 /**
