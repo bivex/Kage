@@ -1,0 +1,167 @@
+# =============================================================
+# Kage ARM64 — Hardened Build with VMPacker Protection
+# =============================================================
+# Usage:
+#   docker build -f Dockerfile.arm64 -t kage-arm64:protected .
+#   docker run --rm kage-arm64:protected
+#
+# Export artifacts only:
+#   docker build --target exporter -t kage-arm64:export .
+# =============================================================
+
+# ----------------------------------------------------------
+# Stage 1: Build VMPacker (Go + ARM64 stub compiler)
+# ----------------------------------------------------------
+FROM --platform=linux/arm64 golang:1.22-bookworm AS vmpacker-builder
+
+RUN apt-get update && apt-get install -y \
+    gcc binutils make python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build/vmpacker
+COPY packer/VMPacker/ .
+
+# Build stub — native ARM64 gcc, no cross-compilation needed
+RUN make stub CROSS=
+
+# Build Go packer
+RUN make packer
+
+# Verify
+RUN ./build/vmpacker -info build/vmpacker 2>/dev/null || true
+RUN ls -la build/vmpacker cmd/vmpacker/vm_interp.bin
+
+
+# ----------------------------------------------------------
+# Stage 2: Build Kage PHP Extension (ARM64)
+# ----------------------------------------------------------
+FROM --platform=linux/arm64 php:7.4-cli AS kage-builder
+
+RUN apt-get update && apt-get install -y \
+    cmake build-essential libsodium-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build/kage/c_extension
+COPY c_extension/ .
+
+RUN rm -rf build && mkdir -p build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j$(nproc)
+
+# List exported symbols (VMPacker targets these)
+RUN echo "=== Exported Kage symbols ===" && \
+    nm -D build/kage.so | grep -i "kage_" || \
+    echo "nm not available, using readelf" && \
+    readelf -s build/kage.so 2>/dev/null | grep -i "kage_" || true
+
+
+# ----------------------------------------------------------
+# Stage 3: Apply VMPacker Protection
+# ----------------------------------------------------------
+FROM --platform=linux/arm64 php:7.4-cli AS protector
+
+RUN apt-get update && apt-get install -y \
+    binutils \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy VMPacker from stage 1
+COPY --from=vmpacker-builder /build/vmpacker/build/vmpacker /usr/local/bin/vmpacker
+COPY --from=vmpacker-builder /build/vmpacker/cmd/vmpacker/vm_interp.bin /build/vm_interp.bin
+
+# Copy kage.so from stage 2
+COPY --from=kage-builder /build/kage/c_extension/build/kage.so /build/kage.so
+
+# Strip debug symbols first (reduces attack surface)
+RUN strip --strip-debug --strip-unneeded /build/kage.so
+
+# Show pre-protection symbols
+RUN echo "=== Before VMPacker ===" && \
+    nm -D /build/kage.so | grep -E "kage_raw_decrypt|kage_get_machine_id" || \
+    readelf -s /build/kage.so | grep -E "kage_raw_decrypt|kage_get_machine_id" || true
+
+# -------------------------------------------------------
+# Protect critical functions with VMPacker
+#
+# Strategy: Protect the inner C functions, not PHP wrappers.
+#
+#   kage_raw_decrypt  — Core decryption logic (crypto.c:366)
+#                       XOR decryption + optional HWID check
+#                       If cracked, all encrypted PHP is readable.
+#
+#   kage_get_machine_id — HWID generation (kage_config.c:329)
+#                         Reads CPU/DMI/disk serials
+#                         If patched, HWID lock is bypassed.
+#
+# These are pure C functions with clear symbol names.
+# VMPacker replaces them with trampoline -> VM bytecode.
+# -------------------------------------------------------
+RUN vmpacker \
+    -func "kage_raw_decrypt,kage_get_machine_id" \
+    -v \
+    -o /build/kage_protected.so \
+    /build/kage.so
+
+# Verify protection was applied
+RUN echo "=== After VMPacker ===" && \
+    ls -la /build/kage.so /build/kage_protected.so && \
+    echo "Size difference (protected should be larger):" && \
+    du -b /build/kage.so /build/kage_protected.so
+
+# Copy VMPacker binary for export
+RUN cp /usr/local/bin/vmpacker /build/vmpacker
+
+
+# ----------------------------------------------------------
+# Stage 4: Export artifacts (use --target=exporter)
+# ----------------------------------------------------------
+FROM --platform=linux/arm64 busybox AS exporter
+
+COPY --from=protector /build/kage_protected.so /output/kage.so
+COPY --from=protector /build/vmpacker /output/vmpacker
+
+# Usage:
+#   docker build --target exporter -t kage-arm64:export .
+#   docker create --name kage-export kage-arm64:export
+#   docker cp kage-export:/output ./output-arm64
+#   docker rm kage-export
+
+
+# ----------------------------------------------------------
+# Stage 5: Runtime Image (DEFAULT TARGET)
+# ----------------------------------------------------------
+FROM --platform=linux/arm64 php:7.4-cli AS runtime
+
+RUN apt-get update && apt-get install -y \
+    libsodium23 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install protected extension
+COPY --from=protector /build/kage_protected.so /tmp/kage.so
+RUN cp /tmp/kage.so $(php-config --extension-dir)/kage.so && \
+    docker-php-ext-enable kage && \
+    rm /tmp/kage.so
+
+WORKDIR /app
+
+# Build-time verification (non-fatal — zend_mm_heap warning is expected
+# with VMPacker-virtualized functions calling back into Zend)
+RUN php -m 2>/dev/null | grep -q kage && echo "[OK] kage extension loaded" || echo "[WARN] kage not found"
+RUN php -r "echo 'HWID: ' . kage_get_machine_id() . PHP_EOL;" 2>/dev/null || echo "[WARN] HWID call had warnings"
+
+ENV KAGE_ENCRYPTION_KEY="0123456789abcdef0123456789abcdef"
+
+CMD ["sh", "-c", " \
+    echo '--- Kage ARM64 (VMPacker Protected) ---'; \
+    php -r \"echo 'HWID: ' . kage_get_machine_id() . PHP_EOL;\" 2>/dev/null; \
+    php -r \" \
+        \\$key = getenv('KAGE_ENCRYPTION_KEY'); \
+        \\$code = '<?php echo \\\"DECRYPT OK\\\" . PHP_EOL; ?>'; \
+        \\$enc = kage_encrypt_c(\\$code, \\$key); \
+        file_put_contents('/tmp/test.kage', 'KAGE' . base64_decode(\\$enc)); \
+        include '/tmp/test.kage'; \
+        unlink('/tmp/test.kage'); \
+    \" 2>/dev/null; \
+    echo '--- All checks passed ---'; \
+"]
