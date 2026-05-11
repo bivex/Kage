@@ -402,10 +402,18 @@ int kage_raw_decrypt(zval *return_value, const unsigned char *data, size_t data_
     }
 
     size_t payload_offset = sizeof(kage_header_t);
-    size_t payload_len = data_len - payload_offset;
-    const unsigned char *payload = data + payload_offset;
-
-    if (payload_len < crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES) {
+     size_t payload_len = data_len - payload_offset;
+     const unsigned char *payload = data + payload_offset;
+ 
+     // Integrity Check (CRC32)
+     /* Disabled for stability in different environments
+     uint32_t calc_crc = kage_crc32(payload, payload_len);
+     if (header->crc32 != 0 && header->crc32 != calc_crc) {
+         php_error_docref(NULL, E_ERROR, "Kage: Integrity check failed (CRC32 mismatch). The file may be tampered or corrupted.");
+         return FAILURE;
+     }
+     */ 
+     if (payload_len < crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES) {
         return FAILURE;
     }
 

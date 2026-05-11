@@ -38,7 +38,6 @@ static int kage_get_jump_target_operand(unsigned char opcode) {
 
 /**
  * XOR-encrypt all constant string and long operands in an op_array.
- * Also obfuscates jump offsets for control flow protection (Phase 3.4).
  */
 PHPAPI void kage_encrypt_operands(zend_op_array *op_array, zend_string *key) {
     if (!op_array || !key) return;
@@ -53,7 +52,7 @@ PHPAPI void kage_encrypt_operands(zend_op_array *op_array, zend_string *key) {
         xor_mask = k[0] | (k[0] << 8) | (k[0] << 16) | (k[0] << 24);
     }
 
-    // 1. Encrypt Jump Targets (Phase 3.4)
+    // 1. Encrypt Jump Targets
     if (xor_mask != 0) {
         for (uint32_t i = 0; i < op_array->last; i++) {
             zend_op *op = &op_array->opcodes[i];
@@ -68,7 +67,7 @@ PHPAPI void kage_encrypt_operands(zend_op_array *op_array, zend_string *key) {
         }
     }
 
-    // 2. Encrypt Literals (Phase 3.3)
+    // 2. Encrypt Literals
     if (op_array->literals) {
         for (int i = 0; i < op_array->last_literal; i++) {
             zval *zv = &op_array->literals[i];
@@ -95,40 +94,42 @@ PHPAPI void kage_encrypt_operands(zend_op_array *op_array, zend_string *key) {
 
 static void kage_protect_op_array(zend_op_array *op_array, zend_string *key, uint32_t seed) {
     if (!op_array || op_array->type != ZEND_USER_FUNCTION) return;
+    if (op_array->reserved[0] == (void*)1) return;
 
-    // 1. Encrypt this op_array
     kage_encrypt_operands(op_array, key);
     kage_map_oparray_seeded(op_array, seed);
 
-    // 2. Carrier Setup
     if (op_array->last > 0) {
         op_array->reserved[1] = (void*)(uintptr_t)(op_array->opcodes[0].opcode | ((uint64_t)seed << 8));
-        op_array->opcodes[0].opcode = 0; // ZEND_NOP
+        op_array->opcodes[0].opcode = 0; // Carrier
     }
     op_array->reserved[0] = (void*)1;
 }
 
 PHPAPI void kage_protect_recursive(zend_op_array *op_array, zend_string *key, uint32_t seed) {
-    if (!op_array) return;
+    if (!op_array || !op_array->filename) return;
 
-    // Protect the main op_array
+    HashTable *func_table = EG(function_table);
+    HashTable *class_table = EG(class_table);
+    zend_string *target_file = op_array->filename;
+
     kage_protect_op_array(op_array, key, seed);
 
-    // Protect nested functions
-    if (CG(function_table)) {
+    if (func_table) {
         zend_function *func;
-        ZEND_HASH_FOREACH_PTR(CG(function_table), func) {
-            if (func->type == ZEND_USER_FUNCTION) {
+        ZEND_HASH_FOREACH_PTR(func_table, func) {
+            if (func->type == ZEND_USER_FUNCTION && func->op_array.filename &&
+                zend_string_equals(func->op_array.filename, target_file)) {
                 kage_protect_op_array(&func->op_array, key, seed);
             }
         } ZEND_HASH_FOREACH_END();
     }
-    
-    // Protect class methods
-    if (CG(class_table)) {
+
+    if (class_table) {
         zend_class_entry *ce;
-        ZEND_HASH_FOREACH_PTR(CG(class_table), ce) {
-            if (ce->type == ZEND_USER_CLASS) {
+        ZEND_HASH_FOREACH_PTR(class_table, ce) {
+            if (ce->type == ZEND_USER_CLASS && ce->info.user.filename &&
+                zend_string_equals(ce->info.user.filename, target_file)) {
                 zend_function *func;
                 ZEND_HASH_FOREACH_PTR(&ce->function_table, func) {
                     if (func->type == ZEND_USER_FUNCTION) {
@@ -168,69 +169,72 @@ static void kage_lzss_decompress(const unsigned char *input, size_t input_len, u
     }
 }
 
- __attribute__((optimize("O1")))
- PHPAPI int kage_global_user_handler(zend_execute_data *execute_data) {
-     zend_function *func = execute_data->func; 
-     if (func && (func->type == ZEND_USER_FUNCTION || func->type == ZEND_EVAL_CODE)) {
-         zend_op_array *op_array = &func->op_array;
- 
-         if (op_array->reserved[0] == (void*)1) {
-             // 1. Unpack Seed & Carrier from reserved[1]
-             uintptr_t packed = (uintptr_t)op_array->reserved[1];
-             unsigned char virtual_first = (unsigned char)(packed & 0xFF);
-             uint32_t oparray_seed = (uint32_t)(packed >> 8);
-             op_array->opcodes[0].opcode = virtual_first;
- 
-             // 2. Key Resolution
-             zend_string *key_str = KAGE_G(encryption_key);
-             int release_key = 0;
-             if (!key_str) {
-                 char *env = getenv("KAGE_ENCRYPTION_KEY");
-                 if (env) {
-                     key_str = zend_string_init(env, 32, 0);
-                     release_key = 1;
-                 }
-             }
- 
-             if (key_str) {
-                 unsigned char map[256], reverse[256];
-                 kage_build_map_seeded(map, reverse, oparray_seed);
- 
-                 for (uint32_t i = 0; i < op_array->last; i++) {
-                     zend_op *op = &op_array->opcodes[i];
-                     op->opcode = reverse[op->opcode];
-                     zend_vm_set_opcode_handler(op);
-                 }
-                 
-                 kage_encrypt_operands(op_array, key_str);
- 
-                 for (uint32_t i = 0; i < op_array->last; i++) {
-                     zend_op *op = &op_array->opcodes[i];
-                     int target_op = kage_get_jump_target_operand(op->opcode);
-                     if (target_op == 1) {
-                         uint32_t t = op->op1.opline_num;
-                         if (t < op_array->last) {
- #if ZEND_USE_ABS_JMP_ADDR
-                             op->op1.jmp_addr = &op_array->opcodes[t];
- #else
-                             op->op1.jmp_offset = (uint32_t)((int32_t)t - (int32_t)i);
- #endif
-                         }
-                     } else if (target_op == 2) {
-                         uint32_t t = op->op2.opline_num;
-                         if (t < op_array->last) {
- #if ZEND_USE_ABS_JMP_ADDR
-                             op->op2.jmp_addr = &op_array->opcodes[t];
- #else
-                             op->op2.jmp_offset = (uint32_t)((int32_t)t - (int32_t)i);
- #endif
-                         }
-                     }
-                 }
-                 if (release_key) zend_string_release(key_str);
-             }
-             op_array->reserved[0] = 0;
-         }
-     }
-     return ZEND_USER_OPCODE_DISPATCH;
- }
+__attribute__((optimize("O1")))
+PHPAPI int kage_global_user_handler(zend_execute_data *execute_data) {
+    zend_function *func = execute_data->func;
+
+    if (func && (func->type == ZEND_USER_FUNCTION || func->type == ZEND_EVAL_CODE)) {
+        zend_op_array *op_array = &func->op_array;
+
+        // RECURSION GUARD
+        if (!op_array->reserved || op_array->reserved[0] != (void*)1) {
+            return ZEND_USER_OPCODE_DISPATCH;
+        }
+
+        uintptr_t packed = (uintptr_t)op_array->reserved[1];
+        unsigned char virtual_first = (unsigned char)(packed & 0xFF);
+        uint32_t oparray_seed = (uint32_t)(packed >> 8);
+        
+        op_array->reserved[0] = 0; // Mark as unprotected BEFORE unmapping
+        op_array->opcodes[0].opcode = virtual_first;
+
+        zend_string *key_str = KAGE_G(encryption_key);
+        int release_key = 0;
+        if (!key_str) {
+            char *env = getenv("KAGE_ENCRYPTION_KEY");
+            if (env) {
+                key_str = zend_string_init(env, 32, 0);
+                release_key = 1;
+            }
+        }
+
+        if (key_str) {
+            unsigned char map[256], reverse[256];
+            kage_build_map_seeded(map, reverse, oparray_seed);
+
+            for (uint32_t i = 0; i < op_array->last; i++) {
+                zend_op *op = &op_array->opcodes[i];
+                op->opcode = reverse[op->opcode];
+                // DO NOT touch handlers here for stability.
+            }
+            
+            kage_encrypt_operands(op_array, key_str);
+
+            for (uint32_t i = 0; i < op_array->last; i++) {
+                zend_op *op = &op_array->opcodes[i];
+                int target_op = kage_get_jump_target_operand(op->opcode);
+                if (target_op == 1) {
+                    uint32_t t = op->op1.opline_num;
+                    if (t < op_array->last) {
+#if ZEND_USE_ABS_JMP_ADDR
+                        op->op1.jmp_addr = &op_array->opcodes[t];
+#else
+                        op->op1.jmp_offset = (uint32_t)((int32_t)t - (int32_t)i);
+#endif
+                    }
+                } else if (target_op == 2) {
+                    uint32_t t = op->op2.opline_num;
+                    if (t < op_array->last) {
+#if ZEND_USE_ABS_JMP_ADDR
+                        op->op2.jmp_addr = &op_array->opcodes[t];
+#else
+                        op->op2.jmp_offset = (uint32_t)((int32_t)t - (int32_t)i);
+#endif
+                    }
+                }
+            }
+            if (release_key) zend_string_release(key_str);
+        }
+    }
+    return ZEND_USER_OPCODE_DISPATCH;
+}

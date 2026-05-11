@@ -61,4 +61,7 @@ CMD export KAGE_ENCRYPTION_KEY="0123456789abcdef0123456789abcdef" ; \
         unlink('locked.kage'); \
     " 2>&1 | grep -v "PHP Warning" ; \
     echo "" ; \
+    echo "--- Phase 6: Enterprise Features (ISA, Recursive, Perf) ---" ; \
+    php tests/test_enterprise_suite.php ; \
+    echo "" ; \
     echo "--- 🏁 Verification Complete ---"
