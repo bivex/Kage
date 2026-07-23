@@ -3,6 +3,7 @@
  */
 
 #include "config.h"
+#include "kage_compat.h"
 #include "bytecode_crypto.h"
 #include "zend_compile.h"
 #include "zend_execute.h"
@@ -18,7 +19,9 @@ static int kage_get_jump_target_operand(unsigned char opcode) {
             return 1;
         case ZEND_JMPZ:
         case ZEND_JMPNZ:
+#ifdef ZEND_JMPZNZ
         case ZEND_JMPZNZ:
+#endif
         case ZEND_JMPZ_EX:
         case ZEND_FE_RESET_R:
         case ZEND_FE_FETCH_R:
@@ -55,7 +58,7 @@ PHPAPI void kage_encrypt_operands(zend_op_array *op_array, zend_string *key) {
     if (op_array->literals) {
         for (int i = 0; i < op_array->last_literal; i++) {
             zval *zv = &op_array->literals[i];
-            if (Z_TYPE_P(zv) == IS_STRING && Z_STRVAL_P(zv)) {
+            if (Z_TYPE_P(zv) == IS_STRING && Z_STR_P(zv)) {
                 char *s = Z_STRVAL_P(zv);
                 for (size_t j = 0; j < Z_STRLEN_P(zv); j++) s[j] ^= k[j % keylen];
             } else if (Z_TYPE_P(zv) == IS_LONG) Z_LVAL_P(zv) ^= k[0];
@@ -116,7 +119,7 @@ PHPAPI int kage_global_user_handler(zend_execute_data *execute_data) {
         zend_op_array *op_array = &func->op_array;
         
         // Fast path: most calls will skip this
-        if (op_array->reserved && op_array->reserved[0] == (void*)1) {
+        if (op_array->reserved[0] == (void*)1) {
             uint32_t seed = (uint32_t)(uintptr_t)op_array->reserved[1];
             op_array->reserved[0] = 0; // Unmark
             

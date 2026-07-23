@@ -8,6 +8,7 @@
 #include "ext/standard/info.h"
 #include "kage_context.h"
 #include "kage_config.h"
+#include "kage_compat.h"
 #include "bytecode_crypto.h"
 #include "kage_opcode_map.h"
 #include "kage_memory.h"
@@ -21,7 +22,7 @@ int le_kage_ast;
 static zend_op_array *(*original_compile_file)(zend_file_handle *file_handle, int type);
 
 static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type) {
-    const char *filename = file_handle->filename;
+    const char *filename = KAGE_FH_FILENAME(file_handle);
     zend_op_array *op_array = NULL;
     FILE *fp = NULL;
     char header_magic[4];
@@ -71,10 +72,7 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
                     code_len -= 2;
                 }
 
-                zval code_zv;
-                ZVAL_STRINGL(&code_zv, code_start, code_len);
-                op_array = zend_compile_string(&code_zv, (char*)filename);
-                zval_ptr_dtor(&code_zv);
+                op_array = kage_compat_compile_string(code_start, code_len, filename);
                 zval_ptr_dtor(&decrypted_zv);
 
                 if (op_array) {
