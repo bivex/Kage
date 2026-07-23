@@ -16,7 +16,7 @@ $$\begin{align*}
 \end{align*}$$
 
 ### Execution Status Enumeration
-$$\text{STATUS} ::= \text{ok} \mid \text{err\_invalid\_magic} \mid \text{err\_crc\_mismatch} \mid \text{err\_hwid\_mismatch} \mid \text{err\_crypto\_fail} \mid \text{err\_io}$$
+$$\text{STATUS} ::= \text{ok} \mid \text{err-invalid-magic} \mid \text{err-crc-mismatch} \mid \text{err-hwid-mismatch} \mid \text{err-crypto-fail} \mid \text{err-io}$$
 
 ---
 
@@ -47,7 +47,7 @@ $$\text{STATUS} ::= \text{ok} \mid \text{err\_invalid\_magic} \mid \text{err\_cr
 
 ### 2.2 Dynamic ISA Opcode Permutation Table
 
-Let $\text{VALID\_OPCODES} \subset \text{OPCODE}$ be the set of valid Zend Engine instruction codes ($\{1 \dots \text{ZEND\_VM\_LAST\_OPCODE}\}$ excluding $\text{ZEND\_NOP}$).
+Let $\text{ValidOpcodes} \subset \text{OPCODE}$ be the set of valid Zend Engine instruction codes ($\{1 \dots \text{ZEND-VM-LAST-OPCODE}\}$ excluding $\text{ZEND-NOP}$).
 
 ```z
 ┌── DynamicISAMap ──────────────────────────────────────────────────────
@@ -55,12 +55,12 @@ Let $\text{VALID\_OPCODES} \subset \text{OPCODE}$ be the set of valid Zend Engin
 │ virtual_map : OPCODE ↣ OPCODE
 │ reverse_map : OPCODE ↣ OPCODE
 ├───────────────────────────────────────────────────────────────────────
-│ dom virtual_map = VALID_OPCODES
-│ ran virtual_map = VALID_OPCODES
-│ dom reverse_map = VALID_OPCODES
-│ ran reverse_map = VALID_OPCODES
-│ ∀ op : VALID_OPCODES • reverse_map(virtual_map(op)) = op
-│ ∀ op : OPCODE \ VALID_OPCODES • virtual_map(op) = op ∧ reverse_map(op) = op
+│ dom virtual_map = ValidOpcodes
+│ ran virtual_map = ValidOpcodes
+│ dom reverse_map = ValidOpcodes
+│ ran reverse_map = ValidOpcodes
+│ ∀ op : ValidOpcodes • reverse_map(virtual_map(op)) = op
+│ ∀ op : OPCODE \ ValidOpcodes • virtual_map(op) = op ∧ reverse_map(op) = op
 └───────────────────────────────────────────────────────────────────────
 ```
 
@@ -179,16 +179,16 @@ Let $\text{VALID\_OPCODES} \subset \text{OPCODE}$ be the set of valid Zend Engin
 ## 5. Formal Safety & Security Theorems
 
 ### Theorem 1: Dynamic ISA Mapping Bijectivity
-$$\forall \text{seed} \in \mathbb{N}, \forall o \in \text{VALID\_OPCODES} \cdot \pi^{-1}_{\text{seed}}(\pi_{\text{seed}}(o)) = o$$
+$$\forall \text{seed} \in \mathbb{N}, \forall o \in \text{ValidOpcodes} \cdot \pi^{-1}_{\text{seed}}(\pi_{\text{seed}}(o)) = o$$
 
-*Proof:* Follows directly from the construction of `kage_build_map_seeded` in `vm/kage_opcode_map.c`, which builds a strictly single-valued permutation array over $\text{VALID\_OPCODES}$ using a deterministic Linear Congruential Generator (LCG). $\blacksquare$
+*Proof:* Follows directly from the construction of `kage_build_map_seeded` in `vm/kage_opcode_map.c`, which builds a strictly single-valued permutation array over `ValidOpcodes` using a deterministic Linear Congruential Generator (LCG). $\blacksquare$
 
 ---
 
 ### Theorem 2: Hardware Lock Security Invariant
 $$\text{DecryptionSuccess}(P, K, H_{\text{host}}) \implies H_{\text{host}} = P.\text{hwid}$$
 
-*Proof:* Evaluated during `kage_raw_decrypt` in `crypto/crypto.c` (lines 25–31). If $P.\text{flags} \land \text{KAGE\_FLAG\_HWID} \neq 0$ and $\text{strcmp}(H_{\text{host}}, P.\text{hwid}) \neq 0$, the function immediately returns `FAILURE` before executing any payload instructions. $\blacksquare$
+*Proof:* Evaluated during `kage_raw_decrypt` in `crypto/crypto.c` (lines 25–31). If $P.\text{flags} \land \text{FLAG-HWID} \neq 0$ and $\text{strcmp}(H_{\text{host}}, P.\text{hwid}) \neq 0$, the function immediately returns `FAILURE` before executing any payload instructions. $\blacksquare$
 
 ---
 
