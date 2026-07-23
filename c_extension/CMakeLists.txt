@@ -99,7 +99,6 @@ target_include_directories(${PROJECT_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/src/crypto
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ast
         ${CMAKE_CURRENT_SOURCE_DIR}/src/vm
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/compiler
 )
 
 # Compile definitions
