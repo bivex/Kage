@@ -2,7 +2,7 @@
 ## PHP Bytecode Protection & Virtualization System
 
 **Project:** Kage  
-**Target Environment:** PHP 7.4 (Zend Engine 3.4.x)  
+**Target Environment:** PHP 7.4 – 8.4 (Zend Engine 3.4.x – 4.4.x)  
 
 ---
 
@@ -38,7 +38,7 @@ Kage implements an intercept strategy:
 
 ## 4. System Integration & Deployment
 ### 4.1 Requirements
-- **Runtime**: PHP 7.4 (AMD64/ARM64 architectures).
+- **Runtime**: PHP 7.4, 8.0, 8.1, 8.2, 8.3, 8.4 (AMD64/ARM64 architectures).
 - **Dependencies**: `libsodium`.
 - **Build System**: CMake 3.16+, GCC 10+, or Docker.
 
@@ -68,20 +68,27 @@ $encrypted_blob = kage_encrypt_c($source_code, $master_key, $target_hwid);
 file_put_contents('production_script.kage', base64_decode($encrypted_blob));
 ```
 
-## 5. Maintenance
+## 5. Maintenance & Testing
 ### 5.1 Project Structure
-- `/c_extension`: Core C-source code and Zend Engine integration.
+- `/c_extension`: Core C-source code and Zend Engine multi-version compatibility layer (`kage_compat.h`).
 - `/packer/VMPacker`: Submodule for native virtualization (x86_64/ARM64 support).
 - `/artifacts`: Pre-compiled binaries.
 - `/tests`: Security and stability verification suite.
+- `/scripts`: Automated multi-PHP version verification tools.
 
 ### 5.2 Verification Suite
-Compliance is verified using `tests/test_enterprise_suite.php`, covering:
+Compliance and multi-version stability are verified across PHP versions (8.1 – 8.4) via:
+```bash
+./scripts/test_php_versions.sh
+```
+This suite validates:
 - **ISA Uniqueness**: Randomized opcode mapping.
 - **Performance Benchmarking**: Native speed execution verification.
 - **Integrity Enforcement**: Tamper detection and HWID lock validation.
+- **Multi-Version Zend Compatibility**: Verifies compilation and runtime execution on PHP 8.1, 8.2, 8.3, and 8.4.
 
 ## 6. Legal & Compliance
 **Licensing**: Proprietary.  
 **Usage Policy**: Redistribution, reverse engineering, or modification is prohibited.  
 **Compliance**: Designed for secure software distribution.
+
