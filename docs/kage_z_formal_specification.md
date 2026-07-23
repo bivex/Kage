@@ -1,6 +1,6 @@
 # 📐 Formal Z Notation Specification & Security Analysis for Kage Extension (v2.0-Enterprise)
 
-This specification adheres to the ISO/IEC 13568 Z Notation standard. It provides a formal mathematical model of the system state, axiomatic function definitions with free option types, explicit Nonce/AEAD authenticated encryption, state transition schemas with frame axioms, and a rigorous security threat model.
+This specification adheres to the ISO/IEC 13568 Z Notation standard. It provides a formal mathematical model of the system state, axiomatic helper definitions, CSPRNG-driven Fisher-Yates shuffle with rejection sampling, end-to-end compilation & RAM protection pipeline schemas, and an explicit client-side threat model.
 
 ---
 
@@ -60,20 +60,28 @@ $$\text{STATUS} ::= \text{ok} \mid \text{err-invalid-magic} \mid \text{err-crc-m
 └───────────────────────────────────────────────────────────────────────
 ```
 
-### 2.4 BLAKE2b PRNG Entropy Stream & Fisher-Yates Opcode Permutation
+### 2.4 BLAKE2b Counter-Mode PRNG & Unbiased Rejection Sampling
 ```z
-┌── PRNGStream ─────────────────────────────────────────────────────────
-│ PRNGStream : ℕ → seq BYTE
+┌── CounterPRNG ────────────────────────────────────────────────────────
+│ CounterPRNG : ℕ × ℕ → seq BYTE
 ├───────────────────────────────────────────────────────────────────────
-│ ∀ seed : ℕ • #PRNGStream(seed) = 64
+│ ∀ seed, ctr : ℕ • #CounterPRNG(seed, ctr) = 64
 └───────────────────────────────────────────────────────────────────────
 
-┌── FisherYatesShuffle ─────────────────────────────────────────────────
-│ FisherYatesShuffle : ℕ × seq OPCODE → seq OPCODE
+┌── RejectionSample ────────────────────────────────────────────────────
+│ RejectionSample : seq BYTE × ℕ → ℕ
 ├───────────────────────────────────────────────────────────────────────
-│ ∀ seed : ℕ; s : seq OPCODE •
-│   #FisherYatesShuffle(seed, s) = #s ∧
-│   ran FisherYatesShuffle(seed, s) = ran s
+│ ∀ stream : seq BYTE; range : ℕ | range > 0 •
+│   let val == Value32(stream) •
+│     val < (2³² - (2³² mod range)) ⇒ RejectionSample(stream, range) = val mod range
+└───────────────────────────────────────────────────────────────────────
+
+┌── FisherYatesStep ────────────────────────────────────────────────────
+│ FisherYatesStep : ℕ × ℕ × seq OPCODE → seq OPCODE
+├───────────────────────────────────────────────────────────────────────
+│ ∀ seed, idx : ℕ; arr : seq OPCODE | idx > 0 ∧ idx < #arr •
+│   let j == RejectionSample(CounterPRNG(seed, idx), idx + 1) •
+│     FisherYatesStep(seed, idx, arr) = Swap(arr, idx, j)
 └───────────────────────────────────────────────────────────────────────
 ```
 
@@ -164,16 +172,16 @@ Let $\text{ValidOpcodes} \subset \text{OPCODE}$ be the set of valid Zend Engine 
 │ target_hwid? : OPT-HWID
 │ target_domain? : DOMAIN
 │ target_path? : PATH
-│ nonce? : NONCE
 │ status! : STATUS
 ├───────────────────────────────────────────────────────────────────────
 │ #src_code? > 0
 │ target_path? ∉ dom file_store
-│ ∃ h : KageHeader •
+│ ∃ h : KageHeader, csprng_nonce : NONCE •
 │    h.magic = ⟨'K', 'A', 'G', 'E'⟩ ∧
-│    h.nonce = nonce? ∧
+│    h.nonce = csprng_nonce ∧
+│    (∀ p ∈ dom file_store • (file_store p).nonce ≠ csprng_nonce) ∧
 │    let eff_key == SingleStepKDF(master_key, target_hwid?) •
-│      let ciphertext == EncryptAEAD(src_code?, eff_key, nonce?, HeaderBytes(h)) •
+│      let ciphertext == EncryptAEAD(src_code?, eff_key, csprng_nonce, HeaderBytes(h)) •
 │        file_store' = file_store ∪ {target_path? ↦ (HeaderBytes(h) ⁀ ciphertext)} ∧
 │        master_key' = master_key ∧
 │        host_hwid' = host_hwid ∧
@@ -184,12 +192,13 @@ Let $\text{ValidOpcodes} \subset \text{OPCODE}$ be the set of valid Zend Engine 
 
 ---
 
-### 4.3 Runtime Compilation Hook Schema (`KageCompileFileHook`)
+### 4.3 End-to-End Compilation & Protection Pipeline (`KageCompileFileHook`)
 
 ```z
 ┌── KageCompileFileHook ────────────────────────────────────────────────
 │ ΞKageState
 │ file_path? : PATH
+│ compiled_protected_oparray! : ZendOpArray
 │ status! : STATUS
 ├───────────────────────────────────────────────────────────────────────
 │ file_path? ∈ dom file_store
@@ -197,12 +206,17 @@ Let $\text{ValidOpcodes} \subset \text{OPCODE}$ be the set of valid Zend Engine 
 │   if Prefix(content, 4) = ⟨'K', 'A', 'G', 'E'⟩ then
 │     ( ∃ h : KageHeader •
 │         let eff_key == SingleStepKDF(master_key, some-hwid(host_hwid)) •
-│           if DecryptAEAD(PayloadBytes(content), eff_key, h.nonce, HeaderBytes(h)) ≠ decrypt-err then
-│             status! = ok
-│           else
-│             status! = err-crypto-fail )
+│           match DecryptAEAD(PayloadBytes(content), eff_key, h.nonce, HeaderBytes(h)) with
+│             decrypt-ok(raw_source) ⇒
+│               let raw_oparray == ZendCompileString(raw_source) •
+│                 compiled_protected_oparray! = ApplyDynamicISA(raw_oparray, h.seed) ∧
+│                 SodiumMemzero(raw_source) ∧
+│                 status! = ok
+│             decrypt-err ⇒
+│               status! = err-crypto-fail )
 │   else
-│     ( status! = ok )
+│     ( compiled_protected_oparray! = StandardZendCompile(file_path?) ∧
+│       status! = ok )
 └───────────────────────────────────────────────────────────────────────
 ```
 
@@ -210,29 +224,31 @@ Let $\text{ValidOpcodes} \subset \text{OPCODE}$ be the set of valid Zend Engine 
 
 ## 5. Security Model, Threat Analysis & Mathematical Invariants
 
-### 5.1 Threat Model & Cryptographic Boundaries
+### 5.1 Threat Model & Cryptographic Scope Disclosure
 1. **Attacker Model (Client-Side Adversary):**
    The attacker has full root access to the target host execution environment, inspects process memory (`/proc/pid/mem`, gdb), and can patch binaries in memory or on disk.
-2. **Cryptographic Boundary (ChaCha20-Poly1305 AEAD + BLAKE2b KDF):**
-   ChaCha20-Poly1305 AEAD with a unique 12-byte `nonce` per file and BLAKE2b single-step KDF provides confidentiality, integrity, and anti-keystream-reuse guarantees **at rest** and **during transmission**.
-3. **RAM Memory Zeroization (`sodium_memzero`):**
-   Decrypted plaintext memory buffers are zeroed out immediately following Zend compilation to mitigate process RAM dumping.
-4. **Dynamic ISA Obfuscation Boundary:**
-   Dynamic ISA shuffling is a **defense-in-depth static obfuscation layer** designed to prevent static disassembly and generic opcode dumpers (e.g., VLD, PHP-parser) prior to decryption.
+2. **Hardware-Locked Mode Security Scope (`some-hwid`):**
+   When `target_hwid? = some-hwid(h)`, `SingleStepKDF` derives an effective key bound to $h$. Decryption on an unauthorized host mathematically fails at the Poly1305 AEAD layer.
+3. **Unlocked Mode Security Scope (`no-hwid`):**
+   When `target_hwid? = no-hwid`, `SingleStepKDF` derives `eff_key` using a static salt `"KAGE-GLOBAL-KEY-SALT-v2"`. This provides confidentiality **at rest** against passive unauthorized inspection. Under the **Root Attacker Model with a Compromised Master Key**, hardware-locking does not apply to `no-hwid` files.
+4. **Nonce Uniqueness Guarantee:**
+   Nonces are generated via libsodium's CSPRNG (`randombytes_buf`). Global uniqueness across encrypted files ($\forall p_1 \neq p_2 \cdot \text{nonce}_1 \neq \text{nonce}_2$) prevents ChaCha20 keystream reuse attacks.
+5. **RAM Memory Protection Pipeline:**
+   Decrypted PHP source strings are zeroed out via `sodium_memzero` immediately after `zend_compile_string`. Process RAM retains only obfuscated Zend bytecode (`compiled_protected_oparray!`) where opcodes are permuted via `DynamicISAMap(seed)`.
 
 ---
 
 ### 5.2 Formally Verified Mathematical Properties
 
-#### Theorem 1: Fisher-Yates Opcode Permutation Bijectivity
-$$\forall \text{seed} \in \mathbb{N}, \forall o \in \text{ValidOpcodes} \cdot \text{reverse-map}(\text{virtual-map}(o)) = o$$
+#### Theorem 1: Fisher-Yates Permutation Bijectivity & Modulo Bias Absence
+$$\forall \text{seed} \in \mathbb{N}, \forall o \in \text{ValidOpcodes} \cdot \text{ReverseMap}(\text{VirtualMap}(o)) = o$$
 
 *Proof:*
-Follows directly from the construction of `FisherYatesShuffle` over `ValidOpcodes` in `vm/kage_opcode_map.c`. For any input seed, `FisherYatesShuffle` performs a 1-to-1 swap over `ValidOpcodes`, forming a bijective permutation matrix where every element maps to a unique virtual opcode. $\blacksquare$
+Follows directly from the construction of `FisherYatesStep` and `RejectionSample` in `vm/kage_opcode_map.c`. For any seed, `RejectionSample` discards values $\ge 2^{32} - (2^{32} \bmod (i+1))$, providing a uniform, unbiased random index $j \in [0, i]$. `FisherYatesStep` forms a strictly single-valued bijective permutation matrix over `ValidOpcodes`. $\blacksquare$
 
 ---
 
-#### Theorem 2: AEAD Mathematical Hardware Lock Invariant
+#### Theorem 2: AEAD Hardware-Locked Decryption Invariant
 $$\forall \text{content} : \text{seq BYTE}, k : \text{KEY}, n : \text{NONCE}, h_{\text{host}}, h_{\text{target}} : \text{HWID} \mid h_{\text{host}} \neq h_{\text{target}} \cdot$$
 $$\text{DecryptAEAD}(\text{content}, \text{SingleStepKDF}(k, \text{some-hwid}(h_{\text{host}})), n, \text{HeaderBytes}) = \text{decrypt-err}$$
 
