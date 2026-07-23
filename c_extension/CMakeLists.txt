@@ -56,18 +56,18 @@ pkg_check_modules(SODIUM REQUIRED libsodium)
 # --- Source Files ---
 
 set(SOURCES
-    src/kage.c
-    src/kage_context.c
-    src/kage_memory.c
-    src/kage_config.c
-    src/bytecode_crypto.c
-    src/crypto.c
-    src/base64.c
-    src/vm.c
-    src/ast_parser.c
-    src/ast_converter.c
-    src/ast_resource.c
-    src/kage_opcode_map.c  # Phase 3.1: virtual opcode mapping
+    src/core/kage.c
+    src/core/kage_context.c
+    src/core/kage_memory.c
+    src/core/kage_config.c
+    src/crypto/bytecode_crypto.c
+    src/crypto/crypto.c
+    src/crypto/base64.c
+    src/vm/vm.c
+    src/ast/ast_parser.c
+    src/ast/ast_converter.c
+    src/ast/ast_resource.c
+    src/vm/kage_opcode_map.c
 )
 
 # --- PHP Extension Target ---
@@ -94,6 +94,11 @@ target_include_directories(${PROJECT_NAME}
         ${SODIUM_INCLUDE_DIRS}
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/crypto
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ast
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/vm
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/compiler
 )
 
 # Compile definitions
