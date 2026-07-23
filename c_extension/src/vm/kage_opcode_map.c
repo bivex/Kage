@@ -116,31 +116,9 @@ void kage_map_oparray_seeded(zend_op_array *op_array, uint32_t seed) {
     }
 }
 
-unsigned char kage_map_opcode(kage_context *ctx, unsigned char real_opcode) {
-    if (!ctx) return real_opcode;
-    return ctx->opcode_map[real_opcode];
-}
-
-unsigned char kage_unmap_opcode(kage_context *ctx, unsigned char virtual_opcode) {
-    if (!ctx) return virtual_opcode;
-    return ctx->reverse_map[virtual_opcode];
-}
-
 int kage_opcode_map_init(kage_context *ctx) {
-     if (!ctx || ctx->map_initialized) return 0;
-     kage_shuffle_opcode_map(ctx);
-     ctx->map_initialized = 1;
-     return 0;
- }
-
-void kage_opcode_map_shutdown(kage_context *ctx) { }
-
-void kage_map_oparray(kage_context *ctx, zend_op_array *op_array) {
-    if (!ctx || !op_array || !ctx->map_initialized) return;
-    for (uint32_t i = 0; i < op_array->last; i++) {
-        zend_op *op = &op_array->opcodes[i];
-        unsigned char real = op->opcode;
-        unsigned char virt = ctx->opcode_map[real];
-        op->opcode = virt;
-    }
+    if (!ctx || ctx->map_initialized) return 0;
+    kage_shuffle_opcode_map(ctx);
+    ctx->map_initialized = 1;
+    return 0;
 }

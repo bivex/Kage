@@ -46,7 +46,8 @@ int kage_raw_decrypt(zval *rv, const unsigned char *d, size_t dl, zend_string *k
 
 PHP_FUNCTION(kage_encrypt_c) {
     zval *c; zend_string *k, *h_in = NULL, *d_in = NULL;
-    if (zend_parse_parameters(ZEND_NUM_ARGS(), "zS|SS", &c, &k, &h_in, &d_in) == FAILURE) RETURN_FALSE;
+    if (zend_parse_parameters(ZEND_NUM_ARGS(), "zS|S!S!", &c, &k, &h_in, &d_in) == FAILURE) RETURN_FALSE;
+    if (ZSTR_LEN(k) != 32) RETURN_FALSE;
     if (Z_TYPE_P(c) != IS_STRING) convert_to_string(c);
     
     kage_header_t h;
@@ -85,6 +86,7 @@ PHP_FUNCTION(kage_encrypt_c) {
 PHP_FUNCTION(kage_decrypt_c) {
     zval *e; zend_string *k;
     if (zend_parse_parameters(ZEND_NUM_ARGS(), "zS", &e, &k) == FAILURE) RETURN_FALSE;
+    if (ZSTR_LEN(k) != 32) RETURN_FALSE;
     if (Z_TYPE_P(e) != IS_STRING) convert_to_string(e);
     size_t dl; unsigned char *d = kage_base64_decode(Z_STRVAL_P(e), Z_STRLEN_P(e), &dl);
     if (!d) RETURN_FALSE;

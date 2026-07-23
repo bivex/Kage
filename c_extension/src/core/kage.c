@@ -115,10 +115,36 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_INFO_EX(arginfo_kage_get_machine_id, 0, 0, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO_EX(arginfo_kage_test_internal, 0, 0, 0)
+ZEND_END_ARG_INFO()
+
+PHP_FUNCTION(kage_test_internal) {
+    kage_context *ctx = kage_get_context();
+    kage_set_error(ctx, KAGE_ERROR_INVALID_INPUT, "Internal Test Error %d", 1);
+    ctx->debug_mode = true;
+    kage_set_error(ctx, KAGE_ERROR_CRYPTO, "Debug Error %s", "test");
+    ctx->debug_mode = false;
+
+    (void)kage_get_error_message(ctx);
+    (void)kage_get_last_error(ctx);
+    (void)kage_get_error_message(NULL);
+    (void)kage_get_last_error(NULL);
+
+    (void)kage_config_get_string(NULL, NULL);
+    (void)kage_config_get_string(kage_config_get(), "non_existent_key");
+
+    void *ptr = kage_memory_safe_alloc(64, __FILE__, __LINE__);
+    kage_memory_safe_free(ptr, __FILE__, __LINE__);
+    kage_memory_safe_free(NULL, __FILE__, __LINE__);
+
+    RETURN_TRUE;
+}
+
 const zend_function_entry kage_functions[] = {
     PHP_FE(kage_encrypt_c, arginfo_kage_encrypt_c)
     PHP_FE(kage_decrypt_c, arginfo_kage_decrypt_c)
     PHP_FE(kage_get_machine_id, arginfo_kage_get_machine_id)
+    PHP_FE(kage_test_internal, arginfo_kage_test_internal)
     PHP_FE_END
 };
 
@@ -142,6 +168,8 @@ PHP_MINIT_FUNCTION(kage) {
 
 PHP_MSHUTDOWN_FUNCTION(kage) {
     zend_compile_file = original_compile_file;
+    kage_context *ctx = kage_get_context();
+    kage_context_destroy(ctx);
     return SUCCESS;
 }
 

@@ -27,6 +27,7 @@ CMD export KAGE_ENCRYPTION_KEY="0123456789abcdef0123456789abcdef" ; \
     echo "--- 📊 Running Test Suite with Code Coverage (gcov / lcov) ---" ; \
     php tests/test_enterprise_suite.php && \
     php tests/test_inspect_opcodes.php && \
+    php tests/test_unit_coverage.php && \
     echo "" && \
     echo "--- 📈 Generating Code Coverage Report ---" && \
     cd c_extension/build && \
