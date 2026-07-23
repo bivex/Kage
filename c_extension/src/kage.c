@@ -33,14 +33,16 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
 
     if (filename && (strstr(filename, ".kage") || strstr(filename, ".php"))) {
         fp = fopen(filename, "rb");
-        if (fp) {
-            if (fread(header_magic, 1, 4, fp) == 4 && memcmp(header_magic, "KAGE", 4) == 0) {
+        if (fp != NULL) {
+            size_t header_read = fread(header_magic, 1, 4, fp);
+            if (header_read == 4 && memcmp(header_magic, "KAGE", 4) == 0) {
                 is_kage_file = 1;
                 fseek(fp, 0, SEEK_END);
                 size_t file_size = ftell(fp);
                 fseek(fp, 0, SEEK_SET);
                 encrypted_buf = KAGE_ALLOC(file_size);
-                if (fread(encrypted_buf, 1, file_size, fp) != file_size) {
+                size_t content_read = fread(encrypted_buf, 1, file_size, fp);
+                if (content_read != file_size) {
                     goto cleanup;
                 }
                 fclose(fp); fp = NULL;

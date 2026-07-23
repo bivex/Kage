@@ -329,21 +329,25 @@ PHPAPI kage_error_t kage_config_unregister_callback(kage_config *config, const c
 PHPAPI char* kage_get_machine_id(void) {
     char buf[256];
     FILE *f = fopen("/etc/machine-id", "r");
-    if (!f) {
+    if (f == NULL) {
         f = fopen("/var/lib/dbus/machine-id", "r");
+        if (f == NULL) {
+            goto fallback_hostname;
+        }
     }
 
-    if (f) {
-        if (fgets(buf, sizeof(buf), f)) {
-            size_t len = strlen(buf);
-            if (len > 0 && buf[len-1] == '\n') buf[len-1] = '\0';
-            fclose(f);
-            return estrdup(buf);
+    char *read_ptr = fgets(buf, sizeof(buf), f);
+    if (read_ptr != NULL) {
+        size_t len = strlen(buf);
+        if (len > 0 && buf[len - 1] == '\n') {
+            buf[len - 1] = '\0';
         }
         fclose(f);
+        return estrdup(buf);
     }
+    fclose(f);
 
-    // Fallback: use hostname
+fallback_hostname:
     if (gethostname(buf, sizeof(buf)) == 0) {
         return estrdup(buf);
     }
