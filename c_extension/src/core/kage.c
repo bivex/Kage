@@ -76,6 +76,10 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
                 }
 
                 op_array = kage_compat_compile_string(code_start, code_len, filename);
+                
+                if (Z_TYPE(decrypted_zv) == IS_STRING) {
+                    sodium_memzero(Z_STRVAL(decrypted_zv), Z_STRLEN(decrypted_zv));
+                }
                 zval_ptr_dtor(&decrypted_zv);
 
                 if (op_array) {
