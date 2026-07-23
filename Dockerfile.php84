@@ -24,4 +24,5 @@ WORKDIR /app
 
 CMD export KAGE_ENCRYPTION_KEY="0123456789abcdef0123456789abcdef" ; \
     echo "--- 🛡️ Kage Security Verification Suite (PHP 8.4) ---" ; \
-    php tests/test_enterprise_suite.php
+    php tests/test_enterprise_suite.php && \
+    php tests/test_inspect_opcodes.php
