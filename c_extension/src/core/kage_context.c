@@ -12,8 +12,6 @@
 
 #include "kage_context.h"
 #include "crypto.h"
-#include "ast.h"
-#include "vm.h"
 #include "base64.h"
 #include "kage_memory.h"
 #include <stdarg.h>
@@ -161,139 +159,6 @@ static kage_crypto_interface crypto_interface = {
     .decode_base64 = kage_crypto_decode_base64
 };
 
-// AST interface implementation
-static kage_result_t kage_ast_parse_source(const char *source) {
-    kage_result_t result = {KAGE_SUCCESS, {NULL}};
-
-    if (!source) {
-        result.error = KAGE_ERROR_INVALID_INPUT;
-        return result;
-    }
-
-    kage_ast_node *node = kage_ast_parse(source);
-    if (!node) {
-        result.error = KAGE_ERROR_AST;
-        return result;
-    }
-
-    result.result.ast_node = node;
-    return result;
-}
-
-static void kage_ast_free_node(kage_ast_node *node) {
-    kage_ast_free(node);
-}
-
-static kage_result_t kage_ast_convert_to_bytecode(kage_ast_node *node) {
-    kage_result_t result = {KAGE_SUCCESS, {NULL}};
-
-    if (!node) {
-        result.error = KAGE_ERROR_INVALID_INPUT;
-        return result;
-    }
-
-    kage_vm_state *state = KAGE_ALLOC(sizeof(kage_vm_state));
-    if (!state) {
-        result.error = KAGE_ERROR_MEMORY;
-        return result;
-    }
-
-    if (kage_ast_to_bytecode(node, state) != SUCCESS) {
-        efree(state);
-        result.error = KAGE_ERROR_AST;
-        return result;
-    }
-
-    result.result.vm_state = state;
-    return result;
-}
-
-static kage_ast_interface ast_interface = {
-    .parse = kage_ast_parse_source,
-    .free_node = kage_ast_free_node,
-    .to_bytecode = kage_ast_convert_to_bytecode
-};
-
-// VM interface implementation
-static kage_result_t kage_vm_initialize(size_t stack_size) {
-    kage_result_t result = {KAGE_SUCCESS, {NULL}};
-
-    kage_vm_state *state = KAGE_ALLOC(sizeof(kage_vm_state));
-    if (!state) {
-        result.error = KAGE_ERROR_MEMORY;
-        return result;
-    }
-
-    if (kage_vm_init(state, stack_size) != SUCCESS) {
-        efree(state);
-        result.error = KAGE_ERROR_VM;
-        return result;
-    }
-
-    result.result.vm_state = state;
-    return result;
-}
-
-static void kage_vm_destroy_state(kage_vm_state *state) {
-    kage_vm_destroy(state);
-}
-
-static kage_result_t kage_vm_execute_instructions(kage_vm_state *state) {
-    kage_result_t result = {KAGE_SUCCESS, {NULL}};
-
-    if (!state) {
-        result.error = KAGE_ERROR_INVALID_INPUT;
-        return result;
-    }
-
-    if (kage_vm_execute(state) != SUCCESS) {
-        result.error = KAGE_ERROR_VM;
-        return result;
-    }
-
-    return result;
-}
-
-static kage_result_t kage_vm_push_value(kage_vm_state *state, zval *value) {
-    kage_result_t result = {KAGE_SUCCESS, {NULL}};
-
-    if (!state || !value) {
-        result.error = KAGE_ERROR_INVALID_INPUT;
-        return result;
-    }
-
-    if (kage_vm_push(state, value) != SUCCESS) {
-        result.error = KAGE_ERROR_VM;
-        return result;
-    }
-
-    return result;
-}
-
-static kage_result_t kage_vm_pop_value(kage_vm_state *state, zval *result_value) {
-    kage_result_t result = {KAGE_SUCCESS, {NULL}};
-
-    if (!state || !result_value) {
-        result.error = KAGE_ERROR_INVALID_INPUT;
-        return result;
-    }
-
-    if (kage_vm_pop(state, result_value) != SUCCESS) {
-        result.error = KAGE_ERROR_VM;
-        return result;
-    }
-
-    return result;
-}
-
-static kage_vm_interface vm_interface = {
-    .init = kage_vm_initialize,
-    .destroy = kage_vm_destroy_state,
-    .execute = kage_vm_execute_instructions,
-    .push = kage_vm_push_value,
-    .pop = kage_vm_pop_value
-};
-
 // Context management
 PHPAPI kage_context* kage_context_create(void) {
     kage_context *ctx = KAGE_ALLOC(sizeof(kage_context));
@@ -306,8 +171,6 @@ PHPAPI kage_context* kage_context_create(void) {
     // Initialize interfaces
     ctx->memory = &memory_interface;
     ctx->crypto = &crypto_interface;
-    ctx->ast = &ast_interface;
-    ctx->vm = &vm_interface;
 
     // Initialize resource table
     ctx->resources = KAGE_ALLOC(sizeof(HashTable));
@@ -415,52 +278,7 @@ PHPAPI kage_result_t kage_decrypt_string(kage_context *ctx, const char *data, si
 }
 
 PHPAPI kage_result_t kage_parse_and_execute(kage_context *ctx, const char *source) {
-    kage_result_t result = {KAGE_SUCCESS, {NULL}};
-
-    if (!ctx || !source) {
-        result.error = KAGE_ERROR_INVALID_INPUT;
-        return result;
-    }
-
-    // Parse AST
-    kage_result_t ast_result = ctx->ast->parse(source);
-    if (ast_result.error != KAGE_SUCCESS) {
-        return ast_result;
-    }
-
-    // Convert to bytecode
-    kage_result_t bytecode_result = ctx->ast->to_bytecode(ast_result.result.ast_node);
-    if (bytecode_result.error != KAGE_SUCCESS) {
-        ctx->ast->free_node(ast_result.result.ast_node);
-        return bytecode_result;
-    }
-
-    // Set encryption key
-    bytecode_result.result.vm_state->key = ctx->encryption_key;
-
-    // Execute
-    kage_result_t exec_result = ctx->vm->execute(bytecode_result.result.vm_state);
-    if (exec_result.error != KAGE_SUCCESS) {
-        ctx->vm->destroy(bytecode_result.result.vm_state);
-        ctx->ast->free_node(ast_result.result.ast_node);
-        return exec_result;
-    }
-
-    // Pop result
-    zval *final_result = KAGE_ALLOC(sizeof(zval));
-    kage_result_t pop_result = ctx->vm->pop(bytecode_result.result.vm_state, final_result);
-    if (pop_result.error != KAGE_SUCCESS) {
-        efree(final_result);
-        ctx->vm->destroy(bytecode_result.result.vm_state);
-        ctx->ast->free_node(ast_result.result.ast_node);
-        return pop_result;
-    }
-
-    // Clean up
-    ctx->vm->destroy(bytecode_result.result.vm_state);
-    ctx->ast->free_node(ast_result.result.ast_node);
-
-    result.result.value = final_result;
+    kage_result_t result = {KAGE_ERROR_INVALID_INPUT, {NULL}};
     return result;
 }
 

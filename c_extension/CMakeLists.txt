@@ -64,10 +64,6 @@ set(SOURCES
     src/crypto/bytecode_crypto.c
     src/crypto/crypto.c
     src/crypto/base64.c
-    src/vm/vm.c
-    src/ast/ast_parser.c
-    src/ast/ast_converter.c
-    src/ast/ast_resource.c
     src/vm/kage_opcode_map.c
 )
 
@@ -97,7 +93,6 @@ target_include_directories(${PROJECT_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/crypto
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/ast
         ${CMAKE_CURRENT_SOURCE_DIR}/src/vm
 )
 

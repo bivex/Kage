@@ -15,8 +15,6 @@
 #define PHP_KAGE_MEMORY_H
 
 #include "config.h"
-#include "vm.h"
-#include "ast.h"
 #include <stdbool.h>
 
 // Memory pool for efficient allocation
@@ -68,8 +66,6 @@ PHPAPI void kage_scope_cleanup(kage_scope *scope);
 // Resource registration functions
 PHPAPI bool kage_scope_register_zval(kage_scope *scope, zval *zv);
 PHPAPI bool kage_scope_register_string(kage_scope *scope, char *str);
-PHPAPI bool kage_scope_register_ast_node(kage_scope *scope, kage_ast_node *node);
-PHPAPI bool kage_scope_register_vm_state(kage_scope *scope, kage_vm_state *state);
 PHPAPI bool kage_scope_register_buffer(kage_scope *scope, void *buffer);
 
 // Safe allocation macros with automatic cleanup
@@ -86,19 +82,6 @@ PHPAPI bool kage_scope_register_buffer(kage_scope *scope, void *buffer);
         kage_scope_register_string(scope, str); \
     }
 
-#define KAGE_SCOPE_ALLOC_AST_NODE(scope, node) \
-    kage_ast_node *node = kage_ast_node_create(0); \
-    if (node) { \
-        kage_scope_register_ast_node(scope, node); \
-    }
-
-#define KAGE_SCOPE_ALLOC_VM_STATE(scope, state) \
-    kage_vm_state *state = emalloc(sizeof(kage_vm_state)); \
-    if (state) { \
-        memset(state, 0, sizeof(kage_vm_state)); \
-        kage_scope_register_vm_state(scope, state); \
-    }
-
 // Safe function execution with automatic cleanup
 #define KAGE_WITH_SCOPE(scope_var, statements) \
     do { \
@@ -112,7 +95,6 @@ PHPAPI bool kage_scope_register_buffer(kage_scope *scope, void *buffer);
 // Utility functions for common patterns
 PHPAPI zval* kage_safe_zval_copy(kage_scope *scope, zval *src);
 PHPAPI char* kage_safe_string_copy(kage_scope *scope, const char *src, size_t len);
-PHPAPI kage_ast_node* kage_safe_ast_node_copy(kage_scope *scope, kage_ast_node *src);
 
 // Memory statistics for debugging
 typedef struct {

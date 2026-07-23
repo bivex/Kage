@@ -11,8 +11,6 @@
  */
 
 #include "kage_memory.h"
-#include "ast.h"
-#include "vm.h"
 
 // Global memory statistics
 static kage_memory_stats global_stats = {0};
@@ -151,19 +149,6 @@ static void kage_cleanup_string(void *resource) {
     }
 }
 
-static void kage_cleanup_ast_node(void *resource) {
-    if (resource) {
-        kage_ast_free((kage_ast_node*)resource);
-    }
-}
-
-static void kage_cleanup_vm_state(void *resource) {
-    if (resource) {
-        kage_vm_destroy((kage_vm_state*)resource);
-        efree(resource);
-    }
-}
-
 static void kage_cleanup_buffer(void *resource) {
     if (resource) {
         efree(resource);
@@ -188,12 +173,6 @@ static bool kage_scope_add_resource(kage_scope *scope, void *data, kage_resource
         case KAGE_RESOURCE_STRING:
             resource->cleanup = kage_cleanup_string;
             break;
-        case KAGE_RESOURCE_AST_NODE:
-            resource->cleanup = kage_cleanup_ast_node;
-            break;
-        case KAGE_RESOURCE_VM_STATE:
-            resource->cleanup = kage_cleanup_vm_state;
-            break;
         case KAGE_RESOURCE_BUFFER:
             resource->cleanup = kage_cleanup_buffer;
             break;
@@ -216,14 +195,6 @@ PHPAPI bool kage_scope_register_zval(kage_scope *scope, zval *zv) {
 
 PHPAPI bool kage_scope_register_string(kage_scope *scope, char *str) {
     return kage_scope_add_resource(scope, str, KAGE_RESOURCE_STRING);
-}
-
-PHPAPI bool kage_scope_register_ast_node(kage_scope *scope, kage_ast_node *node) {
-    return kage_scope_add_resource(scope, node, KAGE_RESOURCE_AST_NODE);
-}
-
-PHPAPI bool kage_scope_register_vm_state(kage_scope *scope, kage_vm_state *state) {
-    return kage_scope_add_resource(scope, state, KAGE_RESOURCE_VM_STATE);
 }
 
 PHPAPI bool kage_scope_register_buffer(kage_scope *scope, void *buffer) {
@@ -250,14 +221,6 @@ PHPAPI char* kage_safe_string_copy(kage_scope *scope, const char *src, size_t le
     memcpy(dest, src, len);
     dest[len] = '\0';
     return dest;
-}
-
-PHPAPI kage_ast_node* kage_safe_ast_node_copy(kage_scope *scope, kage_ast_node *src) {
-    if (!scope || !src) return NULL;
-
-    // For now, just return the source (deep copy would be more complex)
-    // In a full implementation, this would create a deep copy
-    return src;
 }
 
 // Memory statistics

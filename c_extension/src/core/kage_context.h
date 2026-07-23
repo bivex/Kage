@@ -16,15 +16,10 @@
 
 #include "config.h"
 
-// Include headers that define the types we need
-#include "vm.h"
-#include "ast.h"
 #include <stdbool.h>
 
 // Forward declarations
 typedef struct kage_crypto_context kage_crypto_context;
-typedef struct kage_ast_context kage_ast_context;
-typedef struct kage_vm_context kage_vm_context;
 
 // Error codes for unified error handling
 typedef enum {
@@ -32,8 +27,6 @@ typedef enum {
     KAGE_ERROR_MEMORY = -1,
     KAGE_ERROR_INVALID_INPUT = -2,
     KAGE_ERROR_CRYPTO = -3,
-    KAGE_ERROR_AST = -4,
-    KAGE_ERROR_VM = -5,
     KAGE_ERROR_CONFIG = -6,
     KAGE_ERROR_IO = -7
 } kage_error_t;
@@ -43,8 +36,6 @@ typedef struct {
     kage_error_t error;
     union {
         zval *value;
-        kage_ast_node *ast_node;
-        kage_vm_state *vm_state;
         void *data;
     } result;
 } kage_result_t;
@@ -67,22 +58,6 @@ typedef struct {
     kage_result_t (*decode_base64)(const char *data, size_t data_len);
 } kage_crypto_interface;
 
-// AST operations interface
-typedef struct {
-    kage_result_t (*parse)(const char *source);
-    void (*free_node)(kage_ast_node *node);
-    kage_result_t (*to_bytecode)(kage_ast_node *node);
-} kage_ast_interface;
-
-// VM operations interface
-typedef struct {
-    kage_result_t (*init)(size_t stack_size);
-    void (*destroy)(kage_vm_state *state);
-    kage_result_t (*execute)(kage_vm_state *state);
-    kage_result_t (*push)(kage_vm_state *state, zval *value);
-    kage_result_t (*pop)(kage_vm_state *state, zval *result);
-} kage_vm_interface;
-
 // Main context structure that holds all interfaces
 typedef struct kage_context_s {
     // Configuration
@@ -94,8 +69,6 @@ typedef struct kage_context_s {
     // Interfaces
     kage_memory_interface *memory;
     kage_crypto_interface *crypto;
-    kage_ast_interface *ast;
-    kage_vm_interface *vm;
 
     // Error handling
     kage_error_t last_error;
