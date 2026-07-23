@@ -28,6 +28,7 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
     char header_magic[4];
     int is_kage_file = 0;
     char *encrypted_buf = NULL;
+    size_t file_size = 0;
     zend_string *key = NULL;
     uint32_t oparray_seed = 0;
 
@@ -38,7 +39,7 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
             if (header_read == 4 && memcmp(header_magic, "KAGE", 4) == 0) {
                 is_kage_file = 1;
                 fseek(fp, 0, SEEK_END);
-                size_t file_size = ftell(fp);
+                file_size = ftell(fp);
                 fseek(fp, 0, SEEK_SET);
                 encrypted_buf = KAGE_ALLOC(file_size);
                 size_t content_read = fread(encrypted_buf, 1, file_size, fp);
@@ -86,7 +87,10 @@ static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type)
 
 cleanup:
     if (fp) fclose(fp);
-    if (encrypted_buf) efree(encrypted_buf);
+    if (encrypted_buf) {
+        sodium_memzero(encrypted_buf, file_size);
+        efree(encrypted_buf);
+    }
     if (key) zend_string_release(key);
 
     if (is_kage_file) {
@@ -153,6 +157,9 @@ static void php_kage_init_globals(zend_kage_globals *kage_globals) {
 }
 
 PHP_MINIT_FUNCTION(kage) {
+    if (sodium_init() == -1) {
+        return FAILURE;
+    }
     ZEND_INIT_MODULE_GLOBALS(kage, php_kage_init_globals, NULL);
     kage_opcode_map_init(kage_get_context());
     
