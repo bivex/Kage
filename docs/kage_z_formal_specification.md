@@ -1,6 +1,6 @@
 # 📐 Rigorous Z Notation Specification & Security Analysis for Kage Extension (v2.0-Enterprise)
 
-This specification adheres to the ISO/IEC 13568 Z Notation standard. It provides a formal mathematical model of the system state, axiomatic function definitions, state transition schemas with explicit frame axioms, and an explicit threat model for client-side PHP extension protection.
+This specification adheres to the ISO/IEC 13568 Z Notation standard. It provides a formal mathematical model of the system state, axiomatic function definitions, HKDF key derivation, state transition schemas with explicit frame axioms, and an explicit threat model for client-side PHP extension protection.
 
 ---
 
@@ -33,7 +33,18 @@ $$\text{STATUS} ::= \text{ok} \mid \text{err-invalid-magic} \mid \text{err-crc-m
 └───────────────────────────────────────────────────────────────────────
 ```
 
-### 2.2 Linear Congruential Generator (LCG) Permutation Kernel
+### 2.2 HKDF Hardware-Bound Key Derivation (BLAKE2b)
+```z
+┌── HKDF ───────────────────────────────────────────────────────────────
+│ HKDF : KEY × (HWID ∪ {∅}) → KEY
+├───────────────────────────────────────────────────────────────────────
+│ ∀ k : KEY; h : HWID •
+│   HKDF(k, h) = BLAKE2b(k ∥ h) ∧
+│   HKDF(k, ∅) = k
+└───────────────────────────────────────────────────────────────────────
+```
+
+### 2.3 Linear Congruential Generator (LCG) Permutation Kernel
 The LCG parameters implemented in `vm/kage_opcode_map.c` are:
 $$a = 1103515245, \quad c = 12345, \quad m = 2^{31}$$
 
@@ -47,14 +58,15 @@ $$a = 1103515245, \quad c = 12345, \quad m = 2^{31}$$
 └───────────────────────────────────────────────────────────────────────
 ```
 
-### 2.3 Cryptography & Compilation Axioms
+### 2.4 Cryptography & Compilation Axioms
 ```z
 ┌── EncryptChaCha20 ────────────────────────────────────────────────────
 │ EncryptChaCha20 : seq BYTE × KEY → seq BYTE
 │ DecryptChaCha20 : seq BYTE × KEY → (seq BYTE ∪ {∅})
 ├───────────────────────────────────────────────────────────────────────
-│ ∀ payload : seq BYTE; k : KEY •
-│   DecryptChaCha20(EncryptChaCha20(payload, k), k) = payload
+│ ∀ payload : seq BYTE; k : KEY; h : HWID •
+│   let eff_key == HKDF(k, h) •
+│     DecryptChaCha20(EncryptChaCha20(payload, eff_key), eff_key) = payload
 └───────────────────────────────────────────────────────────────────────
 ```
 
@@ -152,12 +164,13 @@ Let $\text{ValidOpcodes} \subset \text{OPCODE}$ be the set of valid Zend Engine 
 │    h.magic = ⟨'K', 'A', 'G', 'E'⟩ ∧
 │    h.hwid = target_hwid? ∧
 │    h.domain = target_domain? ∧
-│    let payload == EncryptChaCha20(src_code?, master_key) •
-│      file_store' = file_store ∪ {target_path? ↦ (h.magic ⁀ payload)} ∧
-│      master_key' = master_key ∧
-│      host_hwid' = host_hwid ∧
-│      host_domain' = host_domain ∧
-│      status! = ok
+│    let eff_key == HKDF(master_key, target_hwid?) •
+│      let payload == EncryptChaCha20(src_code?, eff_key) •
+│        file_store' = file_store ∪ {target_path? ↦ (h.magic ⁀ payload)} ∧
+│        master_key' = master_key ∧
+│        host_hwid' = host_hwid ∧
+│        host_domain' = host_domain ∧
+│        status! = ok
 └───────────────────────────────────────────────────────────────────────
 ```
 
@@ -175,9 +188,9 @@ Let $\text{ValidOpcodes} \subset \text{OPCODE}$ be the set of valid Zend Engine 
 │ let content == file_store(file_path?) •
 │   if Prefix(content, 4) = ⟨'K', 'A', 'G', 'E'⟩ then
 │     ( ∃ h : KageHeader •
-│         h.hwid = host_hwid ∧
-│         DecryptChaCha20(content, master_key) ≠ ∅ ∧
-│         status! = ok )
+│         let eff_key == HKDF(master_key, host_hwid) •
+│           DecryptChaCha20(content, eff_key) ≠ ∅ ∧
+│           status! = ok )
 │   else
 │     ( status! = ok )
 └───────────────────────────────────────────────────────────────────────
@@ -190,9 +203,11 @@ Let $\text{ValidOpcodes} \subset \text{OPCODE}$ be the set of valid Zend Engine 
 ### 5.1 Threat Model & Boundaries
 1. **Attacker Model (Client-Side Adversary):**
    The attacker has full root access to the target host execution environment, inspects process memory (`/proc/pid/mem`, gdb), and can patch binaries in memory or on disk.
-2. **Cryptographic Boundary:**
-   ChaCha20-Poly1305 provides confidentiality and integrity of the source script **at rest** and **during transmission**.
-3. **Dynamic ISA Obfuscation Boundary:**
+2. **Cryptographic Boundary (HKDF + ChaCha20-Poly1305):**
+   ChaCha20-Poly1305 with HKDF hardware key derivation (`BLAKE2b`) provides confidentiality and integrity of the source script **at rest** and **during transmission**. If HWID differs, decryption fails mathematically at the AEAD layer.
+3. **RAM Zeroization Boundary (`sodium_memzero`):**
+   Plaintext memory buffers are securely zeroed out immediately following compilation to mitigate process memory dump attacks.
+4. **Dynamic ISA Obfuscation Boundary:**
    Dynamic ISA shuffling is a **defense-in-depth static obfuscation layer** designed to prevent static disassembly and generic opcode dumpers (e.g., VLD, PHP-parser) prior to decryption. It does **not** constitute an independent secret key barrier once `master_key` is compromised.
 
 ---
@@ -214,15 +229,21 @@ Since all three conditions hold, the LCG produces a deterministic, collision-fre
 
 ---
 
-#### Property 2: Functional License Policy Invariant (Honest Host Model)
-Under the **Honest Execution Model** (unmodified binary execution environment):
-$$\text{ExecutionAllowed}(\text{payload}, H_{\text{host}}) \iff \text{Header}(payload).\text{hwid} = H_{\text{host}}$$
+#### Property 2: HKDF Mathematical Hardware Lock Invariant
+$$\text{DecryptionSuccess}(\text{payload}, K_{\text{master}}, H_{\text{host}}) \implies \text{HKDF}(K_{\text{master}}, H_{\text{host}}) = \text{HKDF}(K_{\text{master}}, H_{\text{target}})$$
 
-*Proof:* Evaluated during `kage_raw_decrypt` in `crypto/crypto.c` (lines 25–31). If the hardware ID flag is enabled and `strcmp(host_hwid, header.hwid) != 0`, execution fails immediately with `FAILURE`. $\blacksquare$
+*Proof:* Evaluated during `kage_raw_decrypt` in `crypto/crypto.c`. If $H_{\text{host}} \neq H_{\text{target}}$, the derived key $\text{HKDF}(K_{\text{master}}, H_{\text{host}})$ is cryptographically distinct from $\text{HKDF}(K_{\text{master}}, H_{\text{target}})$ via BLAKE2b pseudorandom function properties, causing `crypto_secretbox_open_easy` to fail authentication mathematically without relying on conditional branch statements. $\blacksquare$
 
 ---
 
-#### Property 3: Bounded Trace Memory Leak Verification (Empirical)
+#### Property 3: RAM Memory Zeroization Post-Condition
+$$\forall \text{Buffer } B \text{ allocated for decrypted plaintext in } \text{kage\_raw\_decrypt}, \quad \text{PostCompilation}(B) \implies \text{sodium\_memzero}(B) \text{ executed}$$
+
+*Proof:* Confirmed via inspection of `crypto/crypto.c` (lines 48–51) and `core/kage.c` (lines 89–92). Plaintext buffers are zeroed out via `sodium_memzero` before calling `efree()`. $\blacksquare$
+
+---
+
+#### Property 4: Bounded Trace Memory Leak Verification (Empirical)
 $$\forall \text{Trace } t \in \text{TestSuiteTraces}, \quad \text{AllocatedBytes}(t) - \text{FreedBytes}(t) = 0$$
 
 *Proof:* Confirmed via Valgrind Memcheck (`USE_ZEND_ALLOC=0 valgrind`). Tested traces:
