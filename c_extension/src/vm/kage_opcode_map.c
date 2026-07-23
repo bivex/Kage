@@ -54,8 +54,25 @@ static void kage_shuffle_opcode_map(kage_context *ctx) {
 }
 
 /**
- * Cryptographically secure PRNG Fisher-Yates Shuffle driven by Seed Hash
+ * Cryptographically secure PRNG Fisher-Yates Shuffle with Unbiased Rejection Sampling
  */
+static void kage_generate_prng_stream(unsigned char *out, size_t outlen, uint32_t seed) {
+    uint32_t counter = 0;
+    size_t offset = 0;
+    while (offset < outlen) {
+        struct {
+            uint32_t seed;
+            uint32_t counter;
+        } input = { seed, counter++ };
+        
+        size_t block_len = (outlen - offset < 64) ? (outlen - offset) : 64;
+        unsigned char block[64];
+        crypto_generichash(block, block_len, (const unsigned char*)&input, sizeof(input), NULL, 0);
+        memcpy(out + offset, block, block_len);
+        offset += block_len;
+    }
+}
+
 void kage_build_map_seeded(unsigned char *map, unsigned char *reverse, uint32_t seed) {
     unsigned char valid[256];
     int count = 0;
@@ -72,15 +89,26 @@ void kage_build_map_seeded(unsigned char *map, unsigned char *reverse, uint32_t 
         }
     }
 
-    // Expand 32-bit seed into 64-byte PRNG entropy block via BLAKE2b (crypto_generichash max 64 bytes)
-    unsigned char prng_stream[64];
-    crypto_generichash(prng_stream, 64, (const unsigned char*)&seed, sizeof(seed), NULL, 0);
+    // Expand 32-bit seed into 1024 bytes of CSPRNG entropy via BLAKE2b counter mode
+    uint32_t prng_buf[256];
+    kage_generate_prng_stream((unsigned char*)prng_buf, sizeof(prng_buf), seed);
 
     unsigned char shuffled[256];
     memcpy(shuffled, valid, count * sizeof(unsigned char));
+    
+    size_t prng_idx = 0;
     for (int i = count - 1; i > 0; i--) {
-        unsigned int random_val = prng_stream[(i * 2) % 64] | (prng_stream[(i * 2 + 1) % 64] << 8);
-        unsigned int j = random_val % (i + 1);
+        uint32_t range = i + 1;
+        uint32_t limit = UINT32_MAX - (UINT32_MAX % range);
+        uint32_t val;
+        
+        // Unbiased Rejection Sampling to eliminate Modulo Bias
+        do {
+            val = prng_buf[prng_idx % 256];
+            prng_idx++;
+        } while (val >= limit);
+
+        uint32_t j = val % range;
         unsigned char tmp = shuffled[i];
         shuffled[i] = shuffled[j];
         shuffled[j] = tmp;
