@@ -215,7 +215,7 @@ Let $\text{ValidOpcodes} \subset \text{OPCODE}$ be the set of valid Zend Engine 
 ### 5.2 Formally Verified Properties
 
 #### Property 1: Permutation Bijectivity (Hull-Dobell Theorem)
-$$\forall \text{seed} \in 0 \dots (2^{31}-1), \forall o \in \text{ValidOpcodes} \cdot \text{reverse\_map}(\text{virtual\_map}(o)) = o$$
+$$\forall \text{seed} \in 0 \dots (2^{31}-1), \forall o \in \text{ValidOpcodes} \cdot \text{ReverseMap}(\text{VirtualMap}(o)) = o$$
 
 *Proof (Mathematical):*
 The pseudo-random permutation in `vm/kage_opcode_map.c` uses a linear congruential generator $X_{n+1} = (a X_n + c) \bmod m$ with parameters:
@@ -237,7 +237,7 @@ $$\text{DecryptionSuccess}(\text{payload}, K_{\text{master}}, H_{\text{host}}) \
 ---
 
 #### Property 3: RAM Memory Zeroization Post-Condition
-$$\forall \text{Buffer } B \text{ allocated for decrypted plaintext in } \text{kage\_raw\_decrypt}, \quad \text{PostCompilation}(B) \implies \text{sodium\_memzero}(B) \text{ executed}$$
+$$\forall \text{Buffer } B \text{ allocated for decrypted plaintext}, \quad \text{PostCompilation}(B) \implies \text{SodiumZeroed}(B) \text{ executed}$$
 
 *Proof:* Confirmed via inspection of `crypto/crypto.c` (lines 48–51) and `core/kage.c` (lines 89–92). Plaintext buffers are zeroed out via `sodium_memzero` before calling `efree()`. $\blacksquare$
 
