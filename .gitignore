@@ -2,8 +2,12 @@
 artifacts/
 c_extension/build/
 c_extension/artifacts/
+autom4te.cache/
 *.so
 *.o
+*.dep
+config.nice
+configure
 
 # Backup files
 *.backup
