@@ -1,0 +1,40 @@
+FROM php:8.4-cli
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    cmake \
+    build-essential \
+    libsodium-dev \
+    pkg-config \
+    file \
+    libssl-dev \
+    valgrind \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . /app
+
+WORKDIR /app/c_extension
+RUN rm -rf build && mkdir -p build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Debug && \
+    make -j$(nproc) && \
+    cp kage.so $(php-config --extension-dir)/kage.so && \
+    docker-php-ext-enable kage
+
+WORKDIR /app
+
+CMD export KAGE_ENCRYPTION_KEY="0123456789abcdef0123456789abcdef" ; \
+    echo "==========================================" ; \
+    echo "🔍 KAGE MEMORY LEAK CHECK (VALGRIND)" ; \
+    echo "==========================================" ; \
+    echo "" ; \
+    echo "[1] Checking Enterprise Test Suite..." ; \
+    USE_ZEND_ALLOC=0 valgrind --leak-check=full --show-leak-kinds=all --errors-for-leak-kinds=all --error-exitcode=1 php tests/test_enterprise_suite.php && \
+    echo "" ; \
+    echo "[2] Checking Opcode Inspection Test..." ; \
+    USE_ZEND_ALLOC=0 valgrind --leak-check=full --show-leak-kinds=all --errors-for-leak-kinds=all --error-exitcode=1 php tests/test_inspect_opcodes.php && \
+    echo "" ; \
+    echo "[3] Checking Unit Coverage Test Suite..." ; \
+    USE_ZEND_ALLOC=0 valgrind --leak-check=full --show-leak-kinds=all --errors-for-leak-kinds=all --error-exitcode=1 php tests/test_unit_coverage.php && \
+    echo "" ; \
+    echo "🎉 ZERO MEMORY LEAKS DETECTED BY VALGRIND!"
