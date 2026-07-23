@@ -8,6 +8,7 @@ cmake_policy(SET CMP0074 NEW)  # find_package uses <PackageName>_ROOT variables
 
 option(BUILD_TESTS "Build test suite" OFF)
 option(KAGE_DEBUG "Enable debug logging" OFF)
+option(KAGE_COVERAGE "Enable code coverage" OFF)
 
 # --- Find Dependencies ---
 
@@ -118,6 +119,11 @@ target_compile_options(${PROJECT_NAME}
         -Wextra
         -Wno-unused-parameter
 )
+
+if(KAGE_COVERAGE)
+    target_compile_options(${PROJECT_NAME} PRIVATE -fprofile-arcs -ftest-coverage --coverage)
+    target_link_options(${PROJECT_NAME} PRIVATE --coverage)
+endif()
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME}

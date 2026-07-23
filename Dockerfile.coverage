@@ -1,0 +1,35 @@
+FROM php:8.4-cli
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    cmake \
+    build-essential \
+    libsodium-dev \
+    pkg-config \
+    file \
+    libssl-dev \
+    lcov \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . /app
+
+WORKDIR /app/c_extension
+RUN rm -rf build && mkdir -p build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Debug -DKAGE_COVERAGE=ON && \
+    make -j$(nproc) && \
+    cp kage.so $(php-config --extension-dir)/kage.so && \
+    docker-php-ext-enable kage
+
+WORKDIR /app
+
+CMD export KAGE_ENCRYPTION_KEY="0123456789abcdef0123456789abcdef" ; \
+    echo "--- 📊 Running Test Suite with Code Coverage (gcov / lcov) ---" ; \
+    php tests/test_enterprise_suite.php && \
+    php tests/test_inspect_opcodes.php && \
+    echo "" && \
+    echo "--- 📈 Generating Code Coverage Report ---" && \
+    cd c_extension/build && \
+    lcov --capture --directory . --output-file coverage.info --ignore-errors gcov,source,graph,inconsistent && \
+    lcov --remove coverage.info '/usr/*' --output-file coverage_cleaned.info --ignore-errors unused && \
+    lcov --list coverage_cleaned.info
