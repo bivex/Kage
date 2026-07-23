@@ -5,7 +5,7 @@
 [![PHP Version](https://img.shields.io/badge/PHP-7.4%20%7C%208.0%20%7C%208.1%20%7C%208.2%20%7C%208.3%20%7C%208.4-blue.svg)](https://www.php.net/)
 [![Platform](https://img.shields.io/badge/Architecture-x86__64%20%7C%20ARM64-green.svg)]()
 [![Security](https://img.shields.io/badge/Cryptography-libsodium%20%7C%20ChaCha20--Poly1305-orange.svg)]()
-[![License](https://img.shields.io/badge/License-Proprietary-red.svg)]()
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE.md)
 
 ---
 
@@ -160,7 +160,6 @@ Kage includes automated Docker verification environments covering **PHP 8.1 thro
 
 ---
 
-## 📄 License & Compliance
+## 📄 License
 
-**Proprietary Commercial Software.**  
-All rights reserved. Unauthorized copying, modification, distribution, or reverse engineering of this software is strictly prohibited.
+This project is open-source software licensed under the **[MIT License](LICENSE.md)**.
