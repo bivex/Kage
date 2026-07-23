@@ -16,17 +16,14 @@
 char* kage_compress_lzss(const char *i, size_t il, size_t *ol) { *ol=il; char *o=KAGE_ALLOC(il); memcpy(o,i,il); return o; }
 char* kage_decompress_lzss(const char *i, size_t il, size_t rl) { char *o=KAGE_ALLOC(rl+1); memcpy(o,i,il<rl?il:rl); o[rl]='\0'; return o; }
 
-// Helper for HKDF Hardware-Bound Key Derivation
+// Hash-KDF Key Derivation via libsodium BLAKE2b (crypto_generichash)
 static void kage_derive_effective_key(unsigned char derived_key[32], const unsigned char master_key[32], const char *hwid) {
-    if (hwid && strlen(hwid) > 0) {
-        crypto_generichash(derived_key, 32, (const unsigned char*)hwid, strlen(hwid), master_key, 32);
-    } else {
-        memcpy(derived_key, master_key, 32);
-    }
+    const char *context_salt = (hwid && strlen(hwid) > 0) ? hwid : "KAGE_GLOBAL_KEY_SALT_v2";
+    crypto_generichash(derived_key, 32, (const unsigned char*)context_salt, strlen(context_salt), master_key, 32);
 }
 
 int kage_raw_decrypt(zval *rv, const unsigned char *d, size_t dl, zend_string *k, uint32_t *os) {
-    if (dl < sizeof(kage_header_t)) return FAILURE;
+    if (dl < sizeof(kage_header_t) + crypto_aead_chacha20poly1305_ietf_ABYTES) return FAILURE;
     kage_header_t *h = (kage_header_t*)d;
     if (memcmp(h->magic, KAGE_HEADER_MAGIC, 4) != 0) return FAILURE;
     if (os) *os = h->seed;
@@ -41,27 +38,30 @@ int kage_raw_decrypt(zval *rv, const unsigned char *d, size_t dl, zend_string *k
         kage_derive_effective_key(derived_key, (const unsigned char*)ZSTR_VAL(k), NULL);
     }
 
-    size_t po = sizeof(kage_header_t);
-    size_t pl = dl - po;
-    const unsigned char *pld = d + po;
-    if (pl < 40) {
-        sodium_memzero(derived_key, sizeof(derived_key));
-        return FAILURE;
-    }
+    const unsigned char *ciphertext = d + sizeof(kage_header_t);
+    size_t ciphertext_len = dl - sizeof(kage_header_t);
 
-    size_t plaintext_len = pl - 24 - 16;
+    size_t plaintext_len = ciphertext_len - crypto_aead_chacha20poly1305_ietf_ABYTES;
     unsigned char *p = KAGE_ALLOC(plaintext_len + 1);
-    if (crypto_secretbox_open_easy(p, pld + 24, pl - 24, pld, derived_key) != 0) {
+    unsigned long long decrypted_len_out = 0;
+
+    // ChaCha20-Poly1305 IETF AEAD Decryption with Header as Authenticated Data (AAD)
+    if (crypto_aead_chacha20poly1305_ietf_decrypt(
+            p, &decrypted_len_out,
+            NULL,
+            ciphertext, ciphertext_len,
+            (const unsigned char*)h, sizeof(kage_header_t),
+            h->nonce, derived_key) != 0) {
         sodium_memzero(derived_key, sizeof(derived_key));
         efree(p);
         return FAILURE;
     }
 
-    p[plaintext_len] = '\0';
-    ZVAL_STRINGL(rv, (char *)p, plaintext_len);
+    p[decrypted_len_out] = '\0';
+    ZVAL_STRINGL(rv, (char *)p, decrypted_len_out);
 
-    // RAM Memory Zeroization & Cleanup
-    sodium_memzero(p, plaintext_len);
+    // RAM Memory Zeroization
+    sodium_memzero(p, decrypted_len_out);
     sodium_memzero(derived_key, sizeof(derived_key));
     efree(p);
     return SUCCESS;
@@ -78,6 +78,7 @@ PHP_FUNCTION(kage_encrypt_c) {
     memcpy(h.magic, KAGE_HEADER_MAGIC, 4);
     h.version = 2;
     randombytes_buf(&h.seed, sizeof(h.seed));
+    randombytes_buf(h.nonce, sizeof(h.nonce)); // Unique random 12-byte AEAD Nonce per file
 
     unsigned char derived_key[32];
     if (h_in && ZSTR_LEN(h_in) > 0) {
@@ -93,20 +94,27 @@ PHP_FUNCTION(kage_encrypt_c) {
         memcpy(h.domain, ZSTR_VAL(d_in), ZSTR_LEN(d_in) < 31 ? ZSTR_LEN(d_in) : 31);
     }
 
-    unsigned char n[24]; randombytes_buf(n, 24);
-    size_t cl = 16 + Z_STRLEN_P(c);
-    unsigned char *cv = KAGE_ALLOC(cl);
-    crypto_secretbox_easy(cv, (unsigned char*)Z_STRVAL_P(c), Z_STRLEN_P(c), n, derived_key);
+    size_t plaintext_len = Z_STRLEN_P(c);
+    h.payload_len = (uint32_t)(plaintext_len + crypto_aead_chacha20poly1305_ietf_ABYTES);
+    h.crc32 = kage_crc32((const unsigned char*)Z_STRVAL_P(c), plaintext_len);
+
+    size_t max_ciphertext_len = plaintext_len + crypto_aead_chacha20poly1305_ietf_ABYTES;
+    unsigned char *cv = KAGE_ALLOC(max_ciphertext_len);
+    unsigned long long ciphertext_len_out = 0;
+
+    // ChaCha20-Poly1305 IETF AEAD Encryption with Header as Authenticated Data (AAD)
+    crypto_aead_chacha20poly1305_ietf_encrypt(
+        cv, &ciphertext_len_out,
+        (const unsigned char*)Z_STRVAL_P(c), plaintext_len,
+        (const unsigned char*)&h, sizeof(h),
+        NULL, h.nonce, derived_key
+    );
     sodium_memzero(derived_key, sizeof(derived_key));
 
-    size_t tl = sizeof(h) + 24 + cl;
+    size_t tl = sizeof(h) + ciphertext_len_out;
     unsigned char *cb = KAGE_ALLOC(tl);
-    h.payload_len = (uint32_t)(24 + cl);
-    h.crc32 = kage_crc32(n, 24 + cl);
-
     memcpy(cb, &h, sizeof(h));
-    memcpy(cb + sizeof(h), n, 24);
-    memcpy(cb + sizeof(h) + 24, cv, cl);
+    memcpy(cb + sizeof(h), cv, ciphertext_len_out);
     
     size_t el; char *e = kage_base64_encode(cb, tl, &el);
     efree(cb); efree(cv); if (!e) RETURN_FALSE;
