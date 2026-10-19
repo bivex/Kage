@@ -2,3 +2,6 @@
 	path = packer/VMPacker
 	url = https://github.com/bivex/VMPacker
 	branch = master
+[submodule "ASGARD-5877"]
+	path = ASGARD-5877
+	url = https://github.com/bivex/ASGARD-5877
