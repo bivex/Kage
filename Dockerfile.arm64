@@ -131,7 +131,7 @@ CMD ["sh", "-c", " \
         \\$key = getenv('KAGE_ENCRYPTION_KEY'); \
         \\$code = '<?php echo \\\"DECRYPT OK\\\" . PHP_EOL; ?>'; \
         \\$enc = kage_encrypt_c(\\$code, \\$key); \
-        file_put_contents('/tmp/test.kage', 'KAGE' . base64_decode(\\$enc)); \
+        file_put_contents('/tmp/test.kage', base64_decode(\\$enc)); \
         include '/tmp/test.kage'; \
         unlink('/tmp/test.kage'); \
     \" 2>/dev/null; \
