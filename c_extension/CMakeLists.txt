@@ -9,6 +9,7 @@ cmake_policy(SET CMP0074 NEW)  # find_package uses <PackageName>_ROOT variables
 option(BUILD_TESTS "Build test suite" OFF)
 option(KAGE_DEBUG "Enable debug logging" OFF)
 option(KAGE_COVERAGE "Enable code coverage" OFF)
+option(KAGE_ENABLE_ASGARD "Enable ASGARD-5877 VM virtualization markers and hardening" ON)
 
 # --- Find Dependencies ---
 
@@ -94,6 +95,7 @@ target_include_directories(${PROJECT_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/crypto
         ${CMAKE_CURRENT_SOURCE_DIR}/src/vm
+        ${CMAKE_CURRENT_SOURCE_DIR}/../packer/asgard/examples
 )
 
 # Compile definitions
@@ -103,6 +105,7 @@ target_compile_definitions(${PROJECT_NAME}
         ZEND_ENABLE_STATIC_TSRMLS_CACHE=1
         PHP_EXTENSION
         HAVE_CONFIG_H
+        $<$<BOOL:${KAGE_ENABLE_ASGARD}>:KAGE_HAS_ASGARD=1>
         $<$<CONFIG:DEBUG>:KAGE_DEBUG>
 )
 

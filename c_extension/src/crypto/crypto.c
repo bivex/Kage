@@ -11,27 +11,52 @@
 #include "zend_execute.h"
 #include "zend_smart_str.h"
 #include "kage_memory.h"
+#include "asgard_obf.h"
 #include <sodium.h>
 
-char* kage_compress_lzss(const char *i, size_t il, size_t *ol) { *ol=il; char *o=KAGE_ALLOC(il); memcpy(o,i,il); return o; }
-char* kage_decompress_lzss(const char *i, size_t il, size_t rl) { char *o=KAGE_ALLOC(rl+1); memcpy(o,i,il<rl?il:rl); o[rl]='\0'; return o; }
+char* kage_compress_lzss(const char *i, size_t il, size_t *ol) {
+    ASGARD_BEGIN_VIRTUALIZE("kage_compress_lzss");
+    *ol=il; char *o=KAGE_ALLOC(il); memcpy(o,i,il);
+    ASGARD_END();
+    return o;
+}
+
+char* kage_decompress_lzss(const char *i, size_t il, size_t rl) {
+    ASGARD_BEGIN_VIRTUALIZE("kage_decompress_lzss");
+    char *o=KAGE_ALLOC(rl+1); memcpy(o,i,il<rl?il:rl); o[rl]='\0';
+    ASGARD_END();
+    return o;
+}
 
 // Hash-KDF Key Derivation via libsodium BLAKE2b (crypto_generichash)
 static void kage_derive_effective_key(unsigned char derived_key[32], const unsigned char master_key[32], const char *hwid) {
+    ASGARD_BEGIN_MUTATION("kage_derive_effective_key");
     const char *context_salt = (hwid && strlen(hwid) > 0) ? hwid : "KAGE_GLOBAL_KEY_SALT_v2";
     crypto_generichash(derived_key, 32, (const unsigned char*)context_salt, strlen(context_salt), master_key, 32);
+    ASGARD_END();
 }
 
 int kage_raw_decrypt(zval *rv, const unsigned char *d, size_t dl, zend_string *k, uint32_t *os) {
-    if (dl < sizeof(kage_header_t) + crypto_aead_chacha20poly1305_ietf_ABYTES) return FAILURE;
+    ASGARD_BEGIN_ULTRA("kage_raw_decrypt");
+
+    if (dl < sizeof(kage_header_t) + crypto_aead_chacha20poly1305_ietf_ABYTES) {
+        ASGARD_END();
+        return FAILURE;
+    }
     kage_header_t *h = (kage_header_t*)d;
-    if (memcmp(h->magic, KAGE_HEADER_MAGIC, 4) != 0) return FAILURE;
+    if (memcmp(h->magic, KAGE_HEADER_MAGIC, 4) != 0) {
+        ASGARD_END();
+        return FAILURE;
+    }
     if (os) *os = h->seed;
 
     unsigned char derived_key[32];
     if (h->flags & KAGE_FLAG_HWID) {
         char *mid = kage_get_machine_id();
-        if (!mid) return FAILURE;
+        if (!mid) {
+            ASGARD_END();
+            return FAILURE;
+        }
         kage_derive_effective_key(derived_key, (const unsigned char*)ZSTR_VAL(k), mid);
         efree(mid);
     } else {
@@ -54,6 +79,7 @@ int kage_raw_decrypt(zval *rv, const unsigned char *d, size_t dl, zend_string *k
             h->nonce, derived_key) != 0) {
         sodium_memzero(derived_key, sizeof(derived_key));
         efree(p);
+        ASGARD_END();
         return FAILURE;
     }
 
@@ -64,6 +90,8 @@ int kage_raw_decrypt(zval *rv, const unsigned char *d, size_t dl, zend_string *k
     sodium_memzero(p, decrypted_len_out);
     sodium_memzero(derived_key, sizeof(derived_key));
     efree(p);
+
+    ASGARD_END();
     return SUCCESS;
 }
 

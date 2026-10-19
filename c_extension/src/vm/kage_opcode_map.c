@@ -9,6 +9,7 @@
 #include <zend_vm_opcodes.h>
 #include "kage_opcode_map.h"
 #include "kage_context.h"
+#include "asgard_obf.h"
 #include <sodium.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +19,7 @@
  */
 static void kage_shuffle_opcode_map(kage_context *ctx) {
     if (!ctx) return;
+    ASGARD_BEGIN_ULTRA("kage_shuffle_opcode_map");
 
     for (int i = 0; i < 256; i++) {
         ctx->opcode_map[i] = (unsigned char)i;
@@ -51,12 +53,15 @@ static void kage_shuffle_opcode_map(kage_context *ctx) {
     for (int i = 0; i < 256; i++) {
         ctx->reverse_map[ctx->opcode_map[i]] = (unsigned char)i;
     }
+
+    ASGARD_END();
 }
 
 /**
  * Cryptographically secure PRNG Fisher-Yates Shuffle with Unbiased Rejection Sampling
  */
 static void kage_generate_prng_stream(unsigned char *out, size_t outlen, uint32_t seed) {
+    ASGARD_BEGIN_MUTATION("kage_generate_prng_stream");
     uint32_t counter = 0;
     size_t offset = 0;
     while (offset < outlen) {
@@ -71,9 +76,11 @@ static void kage_generate_prng_stream(unsigned char *out, size_t outlen, uint32_
         memcpy(out + offset, block, block_len);
         offset += block_len;
     }
+    ASGARD_END();
 }
 
 void kage_build_map_seeded(unsigned char *map, unsigned char *reverse, uint32_t seed) {
+    ASGARD_BEGIN_ULTRA("kage_build_map_seeded");
     unsigned char valid[256];
     int count = 0;
 
@@ -120,16 +127,21 @@ void kage_build_map_seeded(unsigned char *map, unsigned char *reverse, uint32_t 
         map[real] = virt;
         reverse[virt] = real;
     }
+    ASGARD_END();
 }
 
 unsigned char kage_unmap_opcode_seeded(unsigned char virtual_opcode, uint32_t seed) {
+    ASGARD_BEGIN_VIRTUALIZE("kage_unmap_opcode_seeded");
     unsigned char map[256], reverse[256];
     kage_build_map_seeded(map, reverse, seed);
-    return reverse[virtual_opcode];
+    unsigned char res = reverse[virtual_opcode];
+    ASGARD_END();
+    return res;
 }
 
 void kage_map_oparray_seeded(zend_op_array *op_array, uint32_t seed) {
     if (!op_array) return;
+    ASGARD_BEGIN_VIRTUALIZE("kage_map_oparray_seeded");
     unsigned char map[256], reverse[256];
     kage_build_map_seeded(map, reverse, seed);
 
@@ -137,6 +149,7 @@ void kage_map_oparray_seeded(zend_op_array *op_array, uint32_t seed) {
         zend_op *op = &op_array->opcodes[i];
         op->opcode = map[op->opcode];
     }
+    ASGARD_END();
 }
 
 int kage_opcode_map_init(kage_context *ctx) {

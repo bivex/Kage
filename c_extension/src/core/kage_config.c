@@ -4,6 +4,7 @@
 
 #include "kage_config.h"
 #include "kage_context.h"
+#include "asgard_obf.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -25,7 +26,10 @@ PHPAPI const char* kage_config_get_string(kage_config *config, const char *key) 
 
 // Phase 4: Machine Fingerprinting & HWID Detection
 PHPAPI char* kage_get_machine_id(void) {
+    ASGARD_BEGIN_ULTRA("kage_get_machine_id");
+
     char buf[256];
+    char *result = NULL;
     FILE *f = fopen("/etc/machine-id", "r");
     if (f == NULL) {
         f = fopen("/var/lib/dbus/machine-id", "r");
@@ -41,20 +45,27 @@ PHPAPI char* kage_get_machine_id(void) {
             buf[len - 1] = '\0';
         }
         fclose(f);
-        return estrdup(buf);
+        result = estrdup(buf);
+        ASGARD_END();
+        return result;
     }
     fclose(f);
 
 fallback_hostname:
     if (gethostname(buf, sizeof(buf)) == 0) {
-        return estrdup(buf);
+        result = estrdup(buf);
+        ASGARD_END();
+        return result;
     }
 
-    return estrdup("unknown-kage-machine");
+    result = estrdup("unknown-kage-machine");
+    ASGARD_END();
+    return result;
 }
 
 // IEEE 802.3 CRC32 Implementation
 PHPAPI uint32_t kage_crc32(const unsigned char *data, size_t len) {
+    ASGARD_BEGIN_MUTATION("kage_crc32");
     uint32_t crc = 0xFFFFFFFF;
     for (size_t i = 0; i < len; i++) {
         crc ^= data[i];
@@ -62,5 +73,7 @@ PHPAPI uint32_t kage_crc32(const unsigned char *data, size_t len) {
             crc = (crc >> 1) ^ (0xEDB88320 & (-(crc & 1)));
         }
     }
-    return ~crc;
+    uint32_t res = ~crc;
+    ASGARD_END();
+    return res;
 }

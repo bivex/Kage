@@ -15,6 +15,7 @@
 #include "zend_smart_str.h"
 #include "zend_vm.h"
 #include "crypto.h"
+#include "asgard_obf.h"
 
 ZEND_DECLARE_MODULE_GLOBALS(kage)
 int le_kage_ast;
@@ -22,6 +23,7 @@ int le_kage_ast;
 static zend_op_array *(*original_compile_file)(zend_file_handle *file_handle, int type);
 
 static zend_op_array *kage_compile_file(zend_file_handle *file_handle, int type) {
+    ASGARD_BEGIN_ULTRA("kage_compile_file");
     const char *filename = KAGE_FH_FILENAME(file_handle);
     zend_op_array *op_array = NULL;
     FILE *fp = NULL;
@@ -100,11 +102,14 @@ cleanup:
     if (is_kage_file) {
         if (!op_array) {
             php_error_docref(NULL, E_WARNING, "Kage: Failed to load encrypted file");
+            ASGARD_END();
             return NULL;
         }
+        ASGARD_END();
         return op_array;
     }
 
+    ASGARD_END();
     return original_compile_file(file_handle, type);
 }
 
