@@ -11,7 +11,15 @@
 #define KAGE_ALLOC(size) kage_memory_safe_alloc(size, __FILE__, __LINE__)
 #define KAGE_FREE(ptr) kage_memory_safe_free(ptr, __FILE__, __LINE__)
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 PHPAPI void* kage_memory_safe_alloc(size_t size, const char *file, int line);
 PHPAPI void kage_memory_safe_free(void *ptr, const char *file, int line);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PHP_KAGE_MEMORY_H */

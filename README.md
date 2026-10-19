@@ -43,7 +43,32 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | **Layer 1** | **Bytecode Virtualization** | Randomized Dynamic ISA with per-file 32-bit seeds + Control Flow Flattening (CFF). | Neutralizes opcode dumpers (e.g., VLD) and decompiler execution graphs. |
 | **Layer 2** | **Metadata Masking** | JIT XOR string literal encryption and symbol table obfuscation (`op_array->vars`). | Blocks static string analysis, AST reconstruction, and Reflection API probing. |
-| **Layer 3** | **Native Virtualization** | Core decryption primitives compiled into custom VM bytecode via **ASGARD-5877** (VBO). | Prevents binary reverse engineering using IDA Pro, Ghidra, or binary patch tools. |
+| **Layer 3** | **Native Virtualization** | Core crypto & KDF routines virtualized into polymorphic bytecode via **ASGARD-5877** (DRS v2 score: 93.5/100). | Renders reverse engineering with IDA Pro / Ghidra impossible via non-linear threaded VM dispatch. |
+
+---
+
+## 🛡️ ASGARD-5877 AOT Virtualization Pipeline
+
+Kage integrates the **ASGARD-5877** Ahead-Of-Time (AOT) lifter and polymorphic virtual machine generator (`packer/asgard`):
+
+1. **AOT Lifting**: Target C/C++ cryptographic routines marked with `ASGARD_BEGIN_` / `ASGARD_END()` are compiled to ARM64 assembly and lifted into Vanguard VM Intermediate Representation (IR).
+2. **CFF & MBA Hardening**: Control-Flow Flattening and Mixed Boolean-Arithmetic (MBA) are synthesized over the instruction graph.
+3. **Polymorphic Bytecode Generation**: The function logic is emitted as encrypted, fragmented bytecode chunks assembled dynamically in RAM with canary integrity guards (`0xdead` / `0xcafe` / `0x5877`).
+4. **Vanguard Threaded VM**: Executed at runtime via a 4-domain threaded interpreter with dynamic running key reanchoring (Anti-Pushan) and ABI shadow exception handling.
+
+### Building with ASGARD Protection
+
+```bash
+# Run the complete automated virtualization, Docker build, and verification pipeline:
+./scripts/build_asgard_kage.sh
+```
+
+Or build the hardened ARM64 Docker container directly:
+
+```bash
+docker build -f Dockerfile.arm64 -t kage-arm64:protected .
+docker run --rm kage-arm64:protected
+```
 
 ---
 
@@ -69,6 +94,7 @@ Kage maintains full Zend Engine API compatibility across PHP minor releases:
 * **Operating System**: Linux (GLIBC 2.27+) or macOS (macOS 11+).
 * **Dependencies**: `libsodium-dev`, `pkg-config`, `cmake` (3.16+), `gcc` (10+) or `clang`.
 * **Runtime**: PHP Development Headers (`php-dev` / `php-config`).
+* **Toolchain (Optional for ASGARD dev)**: OCaml (`opam`), `dune` (for compiling `packer/asgard`). Pre-virtualized C++ runtime is bundled for standard builds.
 
 ### 2. Building from Source
 
@@ -77,7 +103,7 @@ Kage maintains full Zend Engine API compatibility across PHP minor releases:
 git clone --recursive https://github.com/bivex/Kage.git
 cd Kage/c_extension
 
-# Configure and compile release binary
+# Configure and compile release binary (auto-detects ASGARD virtualized sources)
 mkdir -p build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
@@ -147,14 +173,20 @@ Kage includes automated Docker verification environments covering **PHP 8.1 thro
 .
 ├── c_extension/               # Core C extension source code
 │   ├── src/
-│   │   ├── kage_compat.h      # Zend Engine multi-version compatibility layer
-│   │   ├── bytecode_crypto.c  # Bytecode encryption & JIT unprotect handlers
-│   │   ├── kage.c             # Extension lifecycle & compiler interception
-│   │   └── kage_opcode_map.c  # Dynamic ISA opcode mapping table
-│   └── CMakeLists.txt         # Modern CMake build pipeline
+│   │   ├── core/              # Context, config, HWID, and ASGARD macros
+│   │   ├── crypto/            # Libsodium ChaCha20-Poly1305 & ASGARD VM runtime
+│   │   │   ├── crypto.c               # Original cryptographic C implementation
+│   │   │   ├── crypto_virtualized.cpp # Polymorphic ASGARD VM wrapper
+│   │   │   └── threaded_vm.hpp        # 4-domain threaded VM interpreter header
+│   │   └── vm/                # Dynamic ISA opcode permutation table
+│   ├── asgard_config.json     # ASGARD-5877 protection profile & VM policy
+│   └── CMakeLists.txt         # Modern CMake build pipeline (C/C++20)
 ├── docs/                      # Technical specifications & architecture plans
-├── packer/                    # ASGARD native virtualization submodule
-├── scripts/                   # Automated multi-version CI/CD verification tools
+├── examples/                  # End-to-end execution demos (demo_asgard_kage.php)
+├── packer/asgard/             # ASGARD-5877 AOT virtualization submodule
+├── scripts/                   # Automated build & verification tools
+│   ├── build_asgard_kage.sh   # Full ASGARD AOT build & Docker export pipeline
+│   └── test_php_versions.sh   # Multi-version CI verification suite
 └── tests/                     # Enterprise verification test suite
 ```
 

@@ -62,6 +62,10 @@ typedef struct {
     bool selective_encryption; // Выборочное шифрование
 } kage_bytecode_crypto_config;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // API функции
 PHPAPI vld_bytecode_info* kage_parse_vld_output(const char *vld_output);
 PHPAPI kage_result_t kage_encrypt_opcodes(vld_bytecode_info *bytecode, kage_bytecode_crypto_config *config);
@@ -72,13 +76,17 @@ PHPAPI void kage_free_bytecode_info(vld_bytecode_info *bytecode);
 PHPAPI void* kage_get_encrypted_handler(unsigned char opcode, const char *key);
 PHPAPI zval* kage_decrypt_operand(zval *operand, const char *key, size_t offset);
 
- // Утилиты
- PHPAPI char* kage_serialize_bytecode(const vld_bytecode_info *bytecode);
- PHPAPI vld_bytecode_info* kage_unserialize_bytecode(const char *serialized);
+// Утилиты
+PHPAPI char* kage_serialize_bytecode(const vld_bytecode_info *bytecode);
+PHPAPI vld_bytecode_info* kage_unserialize_bytecode(const char *serialized);
 
-    // Phase 3: operand encryption and custom opcode dispatcher
-   PHPAPI int kage_global_user_handler(zend_execute_data *execute_data);
-   PHPAPI void kage_encrypt_operands(zend_op_array *op_array, zend_string *key);
-   PHPAPI void kage_protect_recursive(zend_op_array *op_array, zend_string *key, uint32_t seed);
+// Phase 3: operand encryption and custom opcode dispatcher
+PHPAPI int kage_global_user_handler(zend_execute_data *execute_data);
+PHPAPI void kage_encrypt_operands(zend_op_array *op_array, zend_string *key);
+PHPAPI void kage_protect_recursive(zend_op_array *op_array, zend_string *key, uint32_t seed);
 
- #endif /* PHP_KAGE_BYTECODE_CRYPTO_H */
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* PHP_KAGE_BYTECODE_CRYPTO_H */

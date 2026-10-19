@@ -46,19 +46,19 @@ PHPAPI char* kage_get_machine_id(void) {
         }
         fclose(f);
         result = estrdup(buf);
-        ASGARD_END();
-        return result;
+        goto done;
     }
     fclose(f);
 
 fallback_hostname:
     if (gethostname(buf, sizeof(buf)) == 0) {
         result = estrdup(buf);
-        ASGARD_END();
-        return result;
+        goto done;
     }
 
     result = estrdup("unknown-kage-machine");
+
+done:
     ASGARD_END();
     return result;
 }

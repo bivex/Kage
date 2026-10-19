@@ -25,6 +25,10 @@
 #define PHP_KAGE_EXTNAME "kage"
 #define PHP_KAGE_VERSION "0.1.0"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Declare the functions that will be exposed to PHP userland
 PHP_FUNCTION(kage_encrypt_c);
 PHP_FUNCTION(kage_decrypt_c);
@@ -53,5 +57,9 @@ PHP_MINFO_FUNCTION(kage);
 // Module entry point
 extern zend_module_entry kage_module_entry;
 #define phpext_kage_ptr &kage_module_entry
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PHP_KAGE_H */ 

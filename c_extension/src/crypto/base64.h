@@ -12,6 +12,10 @@
 
 #include "config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * Custom Base64 encoding function
  * @param input Input data to encode
@@ -29,5 +33,9 @@ char* kage_base64_encode(const unsigned char *input, size_t input_length, size_t
  * @return Decoded data or NULL on failure
  */
 unsigned char* kage_base64_decode(const char *data, size_t input_length, size_t *output_length);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PHP_KAGE_BASE64_H */ 

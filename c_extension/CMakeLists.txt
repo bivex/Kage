@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
-project(kage LANGUAGES C)
+project(kage LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Modern CMake policies
 cmake_policy(SET CMP0074 NEW)  # find_package uses <PackageName>_ROOT variables
@@ -57,13 +60,20 @@ pkg_check_modules(SODIUM REQUIRED libsodium)
 
 # --- Source Files ---
 
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/crypto/crypto_virtualized.cpp")
+    message(STATUS "ASGARD VM: Using virtualized crypto implementation (crypto_virtualized.cpp)")
+    set(CRYPTO_SRC src/crypto/crypto_virtualized.cpp)
+else()
+    set(CRYPTO_SRC src/crypto/crypto.c)
+endif()
+
 set(SOURCES
     src/core/kage.c
     src/core/kage_context.c
     src/core/kage_memory.c
     src/core/kage_config.c
     src/crypto/bytecode_crypto.c
-    src/crypto/crypto.c
+    ${CRYPTO_SRC}
     src/crypto/base64.c
     src/vm/kage_opcode_map.c
 )

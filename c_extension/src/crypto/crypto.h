@@ -28,6 +28,10 @@ typedef struct {
 #define KAGE_FLAG_HWID      0x02
 #define KAGE_FLAG_DOMAIN    0x04
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Internal functions
 int kage_internal_encrypt(zval *return_value, zval *data, zend_string *key);
 int kage_internal_decrypt(zval *return_value, zval *encrypted_data, zend_string *key);
@@ -40,5 +44,9 @@ char* kage_decompress_lzss(const char *input, size_t input_len, size_t original_
 PHP_FUNCTION(kage_encrypt_c);
 PHP_FUNCTION(kage_decrypt_c);
 PHP_FUNCTION(kage_get_machine_id);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PHP_KAGE_CRYPTO_H */

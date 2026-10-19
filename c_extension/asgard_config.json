@@ -1,0 +1,14 @@
+{
+  "anti_tamper": {
+    "enabled": false,
+    "nanomites": false,
+    "smc": false,
+    "hardware_timing_probes": false,
+    "memory_integrity_scanner": false,
+    "anti_emulation": false,
+    "direct_syscalls": false
+  },
+  "c_macro": {
+    "enabled": false
+  }
+}

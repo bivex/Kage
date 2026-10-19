@@ -15,37 +15,40 @@
 #include <sodium.h>
 
 char* kage_compress_lzss(const char *i, size_t il, size_t *ol) {
-    ASGARD_BEGIN_VIRTUALIZE("kage_compress_lzss");
-    *ol=il; char *o=KAGE_ALLOC(il); memcpy(o,i,il);
-    ASGARD_END();
+    *ol = il;
+    char *o = (char *)KAGE_ALLOC(il);
+    if (!o) return NULL;
+    memcpy(o, i, il);
     return o;
 }
 
 char* kage_decompress_lzss(const char *i, size_t il, size_t rl) {
-    ASGARD_BEGIN_VIRTUALIZE("kage_decompress_lzss");
-    char *o=KAGE_ALLOC(rl+1); memcpy(o,i,il<rl?il:rl); o[rl]='\0';
-    ASGARD_END();
+    char *o = (char *)KAGE_ALLOC(rl + 1);
+    if (!o) return NULL;
+    size_t copy_len = il < rl ? il : rl;
+    memcpy(o, i, copy_len);
+    o[rl] = '\0';
     return o;
 }
 
-// Hash-KDF Key Derivation via libsodium BLAKE2b (crypto_generichash)
-static void kage_derive_effective_key(unsigned char derived_key[32], const unsigned char master_key[32], const char *hwid) {
-    ASGARD_BEGIN_MUTATION("kage_derive_effective_key");
-    const char *context_salt = (hwid && strlen(hwid) > 0) ? hwid : "KAGE_GLOBAL_KEY_SALT_v2";
-    crypto_generichash(derived_key, 32, (const unsigned char*)context_salt, strlen(context_salt), master_key, 32);
+// Hash-KDF Key Derivation via libsodium BLAKE2b (crypto_generichash) - ASGARD Virtualized
+static void kage_derive_effective_key_vm(unsigned char derived_key[32], const unsigned char master_key[32], const char *context_salt, size_t salt_len) {
+    ASGARD_BEGIN_MUTATION("kage_derive_effective_key_vm");
+    crypto_generichash(derived_key, 32, (const unsigned char*)context_salt, salt_len, master_key, 32);
     ASGARD_END();
 }
 
-int kage_raw_decrypt(zval *rv, const unsigned char *d, size_t dl, zend_string *k, uint32_t *os) {
-    ASGARD_BEGIN_ULTRA("kage_raw_decrypt");
+static void kage_derive_effective_key(unsigned char derived_key[32], const unsigned char master_key[32], const char *hwid) {
+    const char *context_salt = (hwid && strlen(hwid) > 0) ? hwid : "KAGE_GLOBAL_KEY_SALT_v2";
+    kage_derive_effective_key_vm(derived_key, master_key, context_salt, strlen(context_salt));
+}
 
+int kage_raw_decrypt(zval *rv, const unsigned char *d, size_t dl, zend_string *k, uint32_t *os) {
     if (dl < sizeof(kage_header_t) + crypto_aead_chacha20poly1305_ietf_ABYTES) {
-        ASGARD_END();
         return FAILURE;
     }
     kage_header_t *h = (kage_header_t*)d;
     if (memcmp(h->magic, KAGE_HEADER_MAGIC, 4) != 0) {
-        ASGARD_END();
         return FAILURE;
     }
     if (os) *os = h->seed;
@@ -54,7 +57,6 @@ int kage_raw_decrypt(zval *rv, const unsigned char *d, size_t dl, zend_string *k
     if (h->flags & KAGE_FLAG_HWID) {
         char *mid = kage_get_machine_id();
         if (!mid) {
-            ASGARD_END();
             return FAILURE;
         }
         kage_derive_effective_key(derived_key, (const unsigned char*)ZSTR_VAL(k), mid);
@@ -67,7 +69,7 @@ int kage_raw_decrypt(zval *rv, const unsigned char *d, size_t dl, zend_string *k
     size_t ciphertext_len = dl - sizeof(kage_header_t);
 
     size_t plaintext_len = ciphertext_len - crypto_aead_chacha20poly1305_ietf_ABYTES;
-    unsigned char *p = KAGE_ALLOC(plaintext_len + 1);
+    unsigned char *p = (unsigned char *)KAGE_ALLOC(plaintext_len + 1);
     unsigned long long decrypted_len_out = 0;
 
     // ChaCha20-Poly1305 IETF AEAD Decryption with Header as Authenticated Data (AAD)
@@ -79,7 +81,6 @@ int kage_raw_decrypt(zval *rv, const unsigned char *d, size_t dl, zend_string *k
             h->nonce, derived_key) != 0) {
         sodium_memzero(derived_key, sizeof(derived_key));
         efree(p);
-        ASGARD_END();
         return FAILURE;
     }
 
@@ -90,8 +91,6 @@ int kage_raw_decrypt(zval *rv, const unsigned char *d, size_t dl, zend_string *k
     sodium_memzero(p, decrypted_len_out);
     sodium_memzero(derived_key, sizeof(derived_key));
     efree(p);
-
-    ASGARD_END();
     return SUCCESS;
 }
 
@@ -127,7 +126,7 @@ PHP_FUNCTION(kage_encrypt_c) {
     h.crc32 = kage_crc32((const unsigned char*)Z_STRVAL_P(c), plaintext_len);
 
     size_t max_ciphertext_len = plaintext_len + crypto_aead_chacha20poly1305_ietf_ABYTES;
-    unsigned char *cv = KAGE_ALLOC(max_ciphertext_len);
+    unsigned char *cv = (unsigned char *)KAGE_ALLOC(max_ciphertext_len);
     unsigned long long ciphertext_len_out = 0;
 
     // ChaCha20-Poly1305 IETF AEAD Encryption with Header as Authenticated Data (AAD)
@@ -140,7 +139,7 @@ PHP_FUNCTION(kage_encrypt_c) {
     sodium_memzero(derived_key, sizeof(derived_key));
 
     size_t tl = sizeof(h) + ciphertext_len_out;
-    unsigned char *cb = KAGE_ALLOC(tl);
+    unsigned char *cb = (unsigned char *)KAGE_ALLOC(tl);
     memcpy(cb, &h, sizeof(h));
     memcpy(cb + sizeof(h), cv, ciphertext_len_out);
     
