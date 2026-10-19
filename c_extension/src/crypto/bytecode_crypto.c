@@ -58,7 +58,7 @@ PHPAPI void kage_encrypt_operands(zend_op_array *op_array, zend_string *key) {
     if (op_array->literals) {
         for (int i = 0; i < op_array->last_literal; i++) {
             zval *zv = &op_array->literals[i];
-            if (Z_TYPE_P(zv) == IS_STRING && Z_STR_P(zv)) {
+            if (Z_TYPE_P(zv) == IS_STRING && Z_STR_P(zv) && !ZSTR_IS_INTERNED(Z_STR_P(zv))) {
                 char *s = Z_STRVAL_P(zv);
                 for (size_t j = 0; j < Z_STRLEN_P(zv); j++) s[j] ^= k[j % keylen];
             } else if (Z_TYPE_P(zv) == IS_LONG) Z_LVAL_P(zv) ^= k[0];
