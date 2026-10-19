@@ -13,7 +13,7 @@
 
 **Kage** is a high-performance C extension for the Zend Engine designed to safeguard PHP source code, proprietary algorithms, and sensitive assets from reverse engineering, static decompilation, and dynamic memory inspection. 
 
-Combining **Zend-level Bytecode Virtualization**, **Dynamic Instruction Set Architecture (ISA) shuffling**, and **Native Code Virtualization via VMPacker**, Kage provides military-grade code protection while delivering native execution speed via Just-In-Time (JIT) unprotection.
+Combining **Zend-level Bytecode Virtualization**, **Dynamic Instruction Set Architecture (ISA) shuffling**, and **Native Code Virtualization via ASGARD**, Kage provides military-grade code protection while delivering native execution speed via Just-In-Time (JIT) unprotection.
 
 ---
 
@@ -26,7 +26,7 @@ graph TD
     A["Raw PHP Source Code"] --> B["Compiler & Static Analyzer"]
     B --> C["Layer 1: Zend Bytecode Virtualization"]
     C --> D["Layer 2: Data & Symbol Table Masking"]
-    D --> E["Layer 3: Native Binary Virtualization (VMPacker)"]
+    D --> E["Layer 3: Native Binary Virtualization (ASGARD)"]
     E --> F["Protected .kage Payload + Encrypted VM Container"]
 
     subgraph Runtime Execution Environment
@@ -43,7 +43,7 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | **Layer 1** | **Bytecode Virtualization** | Randomized Dynamic ISA with per-file 32-bit seeds + Control Flow Flattening (CFF). | Neutralizes opcode dumpers (e.g., VLD) and decompiler execution graphs. |
 | **Layer 2** | **Metadata Masking** | JIT XOR string literal encryption and symbol table obfuscation (`op_array->vars`). | Blocks static string analysis, AST reconstruction, and Reflection API probing. |
-| **Layer 3** | **Native Virtualization** | Core decryption primitives compiled into custom VM bytecode via **VMPacker**. | Prevents binary reverse engineering using IDA Pro, Ghidra, or binary patch tools. |
+| **Layer 3** | **Native Virtualization** | Core decryption primitives compiled into custom VM bytecode via **ASGARD-5877** (VBO). | Prevents binary reverse engineering using IDA Pro, Ghidra, or binary patch tools. |
 
 ---
 
@@ -153,7 +153,7 @@ Kage includes automated Docker verification environments covering **PHP 8.1 thro
 │   │   └── kage_opcode_map.c  # Dynamic ISA opcode mapping table
 │   └── CMakeLists.txt         # Modern CMake build pipeline
 ├── docs/                      # Technical specifications & architecture plans
-├── packer/                    # VMPacker native virtualization submodule
+├── packer/                    # ASGARD native virtualization submodule
 ├── scripts/                   # Automated multi-version CI/CD verification tools
 └── tests/                     # Enterprise verification test suite
 ```

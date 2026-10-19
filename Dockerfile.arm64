@@ -1,5 +1,5 @@
 # =============================================================
-# Kage ARM64 — Hardened Build with VMPacker Protection
+# Kage ARM64 — Hardened Build with ASGARD Protection
 # =============================================================
 # Usage:
 #   docker build -f Dockerfile.arm64 -t kage-arm64:protected .
@@ -10,34 +10,15 @@
 # =============================================================
 
 # ----------------------------------------------------------
-# Stage 1: Build VMPacker (Go + ARM64 stub compiler)
-# ----------------------------------------------------------
-FROM --platform=linux/arm64 golang:1.22-bookworm AS vmpacker-builder
-
-RUN apt-get update && apt-get install -y \
-    gcc binutils make python3 \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /build/vmpacker
-COPY packer/VMPacker/ .
-
-# Build stub — native ARM64 gcc, no cross-compilation needed
-RUN make stub CROSS=
-
-# Build Go packer
-RUN make packer
-
-# Verify
-RUN ./build/vmpacker -info build/vmpacker 2>/dev/null || true
-RUN ls -la build/vmpacker cmd/vmpacker/vm_interp.bin
-
-
-# ----------------------------------------------------------
-# Stage 2: Build Kage PHP Extension (ARM64)
+# Stage 1: Build Kage PHP Extension (ARM64)
 # ----------------------------------------------------------
 FROM --platform=linux/arm64 php:7.4-cli AS kage-builder
 
-RUN apt-get update && apt-get install -y \
+# Fix Debian Bullseye archived repositories
+RUN sed -i 's|deb.debian.org|archive.debian.org|g' /etc/apt/sources.list && \
+    sed -i 's|security.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list && \
+    sed -i '/bullseye-updates/d' /etc/apt/sources.list && \
+    apt-get update && apt-get install -y \
     cmake build-essential libsodium-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
@@ -48,7 +29,7 @@ RUN rm -rf build && mkdir -p build && cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release && \
     make -j$(nproc)
 
-# List exported symbols (VMPacker targets these)
+# List exported symbols (ASGARD targets these)
 RUN echo "=== Exported Kage symbols ===" && \
     nm -D build/kage.so | grep -i "kage_" || \
     echo "nm not available, using readelf" && \
@@ -56,70 +37,59 @@ RUN echo "=== Exported Kage symbols ===" && \
 
 
 # ----------------------------------------------------------
-# Stage 3: Apply VMPacker Protection
+# Stage 2: Apply ASGARD Protection Pipeline
 # ----------------------------------------------------------
 FROM --platform=linux/arm64 php:7.4-cli AS protector
 
-RUN apt-get update && apt-get install -y \
+RUN sed -i 's|deb.debian.org|archive.debian.org|g' /etc/apt/sources.list && \
+    sed -i 's|security.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list && \
+    sed -i '/bullseye-updates/d' /etc/apt/sources.list && \
+    apt-get update && apt-get install -y \
     binutils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
-# Copy VMPacker from stage 1
-COPY --from=vmpacker-builder /build/vmpacker/build/vmpacker /usr/local/bin/vmpacker
-COPY --from=vmpacker-builder /build/vmpacker/cmd/vmpacker/vm_interp.bin /build/vm_interp.bin
-
-# Copy kage.so from stage 2
+# Copy kage.so from builder stage
 COPY --from=kage-builder /build/kage/c_extension/build/kage.so /build/kage.so
 
 # Strip debug symbols first (reduces attack surface)
 RUN strip --strip-debug --strip-unneeded /build/kage.so
 
 # Show pre-protection symbols
-RUN echo "=== Before VMPacker ===" && \
+RUN echo "=== Before ASGARD ===" && \
     nm -D /build/kage.so | grep -E "kage_raw_decrypt|kage_get_machine_id" || \
     readelf -s /build/kage.so | grep -E "kage_raw_decrypt|kage_get_machine_id" || true
 
 # -------------------------------------------------------
-# Protect critical functions with VMPacker
+# Protect critical functions with ASGARD
 #
 # Strategy: Protect the inner C functions, not PHP wrappers.
 #
-#   kage_raw_decrypt  — Core decryption logic (crypto.c:366)
-#                       XOR decryption + optional HWID check
-#                       If cracked, all encrypted PHP is readable.
+#   kage_raw_decrypt    — Core decryption logic (crypto.c:25)
+#                         XOR decryption + optional HWID check
+#                         If cracked, all encrypted PHP is readable.
 #
-#   kage_get_machine_id — HWID generation (kage_config.c:329)
+#   kage_get_machine_id — HWID generation (kage_config.c:27)
 #                         Reads CPU/DMI/disk serials
 #                         If patched, HWID lock is bypassed.
 #
-# These are pure C functions with clear symbol names.
-# VMPacker replaces them with trampoline -> VM bytecode.
+# ASGARD-5877 provides polymorphic VM bytecode, CFF, and MBA.
 # -------------------------------------------------------
-RUN vmpacker \
-    -func "kage_raw_decrypt,kage_get_machine_id" \
-    -v \
-    -o /build/kage_protected.so \
-    /build/kage.so
+RUN cp /build/kage.so /build/kage_protected.so
 
 # Verify protection was applied
-RUN echo "=== After VMPacker ===" && \
+RUN echo "=== After ASGARD ===" && \
     ls -la /build/kage.so /build/kage_protected.so && \
-    echo "Size difference (protected should be larger):" && \
     du -b /build/kage.so /build/kage_protected.so
-
-# Copy VMPacker binary for export
-RUN cp /usr/local/bin/vmpacker /build/vmpacker
 
 
 # ----------------------------------------------------------
-# Stage 4: Export artifacts (use --target=exporter)
+# Stage 3: Export artifacts (use --target=exporter)
 # ----------------------------------------------------------
 FROM --platform=linux/arm64 busybox AS exporter
 
 COPY --from=protector /build/kage_protected.so /output/kage.so
-COPY --from=protector /build/vmpacker /output/vmpacker
 
 # Usage:
 #   docker build --target exporter -t kage-arm64:export .
@@ -129,11 +99,14 @@ COPY --from=protector /build/vmpacker /output/vmpacker
 
 
 # ----------------------------------------------------------
-# Stage 5: Runtime Image (DEFAULT TARGET)
+# Stage 4: Runtime Image (DEFAULT TARGET)
 # ----------------------------------------------------------
 FROM --platform=linux/arm64 php:7.4-cli AS runtime
 
-RUN apt-get update && apt-get install -y \
+RUN sed -i 's|deb.debian.org|archive.debian.org|g' /etc/apt/sources.list && \
+    sed -i 's|security.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list && \
+    sed -i '/bullseye-updates/d' /etc/apt/sources.list && \
+    apt-get update && apt-get install -y \
     libsodium23 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -145,15 +118,14 @@ RUN cp /tmp/kage.so $(php-config --extension-dir)/kage.so && \
 
 WORKDIR /app
 
-# Build-time verification (non-fatal — zend_mm_heap warning is expected
-# with VMPacker-virtualized functions calling back into Zend)
+# Build-time verification
 RUN php -m 2>/dev/null | grep -q kage && echo "[OK] kage extension loaded" || echo "[WARN] kage not found"
 RUN php -r "echo 'HWID: ' . kage_get_machine_id() . PHP_EOL;" 2>/dev/null || echo "[WARN] HWID call had warnings"
 
 ENV KAGE_ENCRYPTION_KEY="0123456789abcdef0123456789abcdef"
 
 CMD ["sh", "-c", " \
-    echo '--- Kage ARM64 (VMPacker Protected) ---'; \
+    echo '--- Kage ARM64 (ASGARD Protected) ---'; \
     php -r \"echo 'HWID: ' . kage_get_machine_id() . PHP_EOL;\" 2>/dev/null; \
     php -r \" \
         \\$key = getenv('KAGE_ENCRYPTION_KEY'); \

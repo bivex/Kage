@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================
-# build-arm64.sh — Build & test Kage ARM64 with VMPacker
+# build-arm64.sh — Build & test Kage ARM64 with ASGARD
 # =============================================================
 # Usage:
 #   ./build-arm64.sh              # Full build
@@ -67,7 +67,7 @@ case "${1:-build}" in
         exit 0
         ;;
     build|"")
-        info "Full build: VMPacker → Kage → Protect → Runtime"
+        info "Full build: ASGARD → Kage → Protect → Runtime"
         $BUILD_CMD --platform $PLATFORM \
             -f Dockerfile.arm64 \
             -t "$IMAGE" \
